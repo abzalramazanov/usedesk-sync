@@ -6,33 +6,33 @@ const app = express();
 app.use(bodyParser.json());
 
 // Константы
-const TEST_TICKET_ID = 231977706; // Тикет для тестирования
-const USEDESK_API_TOKEN = '12ff4f2af60aee0fe6869cec6e2c8401df7980b7'; // Твой API токен
-const OPERATOR_USER_ID = 293758; // ID реального оператора в UseDesk
+const TEST_CLIENT_ID = 175888649; // Твой client_id для тестов (из UseDesk)
+const USEDESK_API_TOKEN = '12ff4f2af60aee0fe6869cec6e2c8401df7980b7';
+const OPERATOR_USER_ID = 293758; // Твой оператор в UseDesk
 
 app.post("/webhook", async (req, res) => {
   console.log("🚀 Получено сообщение от UseDesk:");
   console.log(JSON.stringify(req.body, null, 2));
 
-  res.sendStatus(200); // Сразу отвечаем OK UseDesk'у
+  res.sendStatus(200);
 
   const messageText = req.body.text;
   const clientId = req.body.client_id;
   const channelId = req.body.ticket?.channel_id;
-  const ticketId = req.body.ticket?.id;
 
-  if (!messageText || !clientId || !channelId || !ticketId) {
+  if (!messageText || !clientId || !channelId) {
     console.log("❗ Пропущены обязательные поля в сообщении");
     return;
   }
 
-  if (ticketId !== TEST_TICKET_ID) {
-    console.log(`⚠️ Сообщение с другого тикета (${ticketId}), пропускаем`);
+  // Теперь проверяем только client_id
+  if (clientId !== TEST_CLIENT_ID) {
+    console.log(`⚠️ Сообщение от другого клиента (${clientId}), пропускаем`);
     return;
   }
 
   try {
-    const replyText = "Привет! Это корректный ответ через канал WhatsApp! 🤖";
+    const replyText = "Привет! Ответ через client_id! 🤖";
 
     const response = await fetch("https://api.usedesk.ru/create/ticket", {
       method: "POST",

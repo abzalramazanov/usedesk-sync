@@ -1,50 +1,80 @@
-// loadFaqFromSheets.js
-import { google } from "googleapis";
-import Fuse from "fuse.js";
-
-const SHEET_ID = "1oyU3RMzRzIETL5c5PAKN1MumxYrFLN1IpLjVd1lA9Cg";
-const SHEET_RANGE = "Лист1!A2:B"; // Пропускаем заголовок
-
-let fuse = null;
-
-export async function loadFaq() {
-  const auth = new google.auth.GoogleAuth({
-    credentials: {
-      client_email: process.env.GOOGLE_CLIENT_EMAIL,
-      private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n")
-    },
-    scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"]
-  });
-
-  const sheets = google.sheets({ version: "v4", auth });
-
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: SHEET_ID,
-    range: SHEET_RANGE
-  });
-
-  const rows = res.data.values;
-  if (!rows || rows.length === 0) throw new Error("Таблица пуста или не найдена");
-
-  const faqList = rows.map(([question, answer]) => ({ question, answer }));
-
-  fuse = new Fuse(faqList, {
-    keys: ["question"],
-    threshold: 0.4
-  });
-
-  console.log(`✅ Загружено ${faqList.length} FAQ из Google Таблицы`);
-}
-
-export function findFaqAnswer(message) {
-  if (!fuse) return null;
-  const result = fuse.search(message.toLowerCase());
-  return result?.[0]?.item?.answer || null;
-}
-
+// index.js
 import express from "express";
-const app = express();
+import bodyParser from "body-parser";
+import fetch from "node-fetch";
+import { loadFaq, findFaqAnswer } from "./loadFaqFromSheets.js";
+import dotenv from "dotenv";
+dotenv.config();
 
+const app = express();
+app.use(bodyParser.json());
+
+// Загружаем FAQ из Google Sheets при старте
+await loadFaq();
+
+// Приём вебхуков от UseDesk
+app.post("/", async (req, res) => {
+  const data = req.body;
+
+  if (!data?.ticket || !data.client_id || data.from !== "client") return res.sendStatus(200);
+
+  const ticketId = data.ticket.id;
+  const clientId = data.client_id;
+  const chatId = data.chat_id;
+  const messageText = data.text;
+
+  // Ищем ответ в базе
+  const faqAnswer = findFaqAnswer(messageText);
+
+  let finalAnswer = faqAnswer;
+
+  // Если не нашли — спрашиваем Gemini
+  if (!faqAnswer) {
+    try {
+      const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: "user",
+              parts: [
+                { text: `Ты бот службы поддержки. Отвечай кратко, вежливо и по делу. Вопрос клиента: ${messageText}` }
+              ]
+            }
+          ]
+        })
+      });
+      const geminiJson = await geminiRes.json();
+      finalAnswer = geminiJson?.candidates?.[0]?.content?.parts?.[0]?.text || "Извините, не смог придумать ответ 😅";
+    } catch (e) {
+      console.error("Ошибка Gemini:", e);
+      finalAnswer = "Извините, не смог придумать ответ 😅";
+    }
+  }
+
+  // Отправляем ответ обратно клиенту через UseDesk
+  try {
+    const usedeskRes = await fetch("https://api.usedesk.ru/chat/sendMessage", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        api_token: process.env.USEDESK_API_TOKEN,
+        chat_id: chatId,
+        user_id: process.env.USEDESK_USER_ID,
+        text: finalAnswer
+      })
+    });
+    const usedeskData = await usedeskRes.json();
+    console.log("✅ Ответ от Gemini отправлен в чат:", finalAnswer);
+  } catch (e) {
+    console.error("❌ Ошибка отправки в UseDesk:", e);
+  }
+
+  res.sendStatus(200);
+});
+
+// Заглушка для Render
 app.get("/", (req, res) => {
   res.send("✅ Usedesk AI Webhook активен");
 });

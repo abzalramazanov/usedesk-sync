@@ -41,3 +41,15 @@ export function findFaqAnswer(message) {
   const result = fuse.search(message.toLowerCase());
   return result?.[0]?.item?.answer || null;
 }
+
+import express from "express";
+const app = express();
+
+app.get("/", (req, res) => {
+  res.send("✅ Usedesk AI Webhook активен");
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`✅ Сервер с ИИ подключен и слушает 🚀 (порт ${PORT})`);
+});

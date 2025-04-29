@@ -1,6 +1,5 @@
 // loadFaqFromSheets.js
 import { google } from "googleapis";
-import { readFileSync } from "fs";
 import Fuse from "fuse.js";
 
 const SHEET_ID = "1oyU3RMzRzIETL5c5PAKN1MumxYrFLN1IpLjVd1lA9Cg";
@@ -10,10 +9,10 @@ let fuse = null;
 
 export async function loadFaq() {
   const auth = new google.auth.GoogleAuth({
-   credentials: {
-  client_email: process.env.GOOGLE_CLIENT_EMAIL,
-  private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n")
-}),
+    credentials: {
+      client_email: process.env.GOOGLE_CLIENT_EMAIL,
+      private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n")
+    },
     scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"]
   });
 

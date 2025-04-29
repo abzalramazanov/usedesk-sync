@@ -1,80 +1,43 @@
-// index.js
-import express from "express";
-import bodyParser from "body-parser";
-import fetch from "node-fetch";
-import { loadFaq, findFaqAnswer } from "./loadFaqFromSheets.js";
+// loadFaqFromSheets.js
+import { google } from "googleapis";
+import Fuse from "fuse.js";
 
-const app = express();
-app.use(bodyParser.json());
+const SHEET_ID = "1oyU3RMzRzIETL5c5PAKN1MumxYrFLN1IpLjVd1lA9Cg";
+const SHEET_RANGE = "Лист1!A2:B"; // Пропускаем заголовок
 
-const USEDESK_API_TOKEN = process.env.USEDESK_API_TOKEN;
-const OPERATOR_USER_ID = parseInt(process.env.OPERATOR_USER_ID || "293758");
-const TEST_CLIENT_ID = parseInt(process.env.TEST_CLIENT_ID || "175888649");
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+let fuse = null;
 
-const SYSTEM_PROMPT = "Ты чат-бот службы поддержки. Отвечай кратко, вежливо и по делу. Если не знаешь — предложи обратиться к оператору.";
+export async function loadFaq() {
+  const auth = new google.auth.GoogleAuth({
+    credentials: {
+      client_email: process.env.GOOGLE_CLIENT_EMAIL,
+      private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n")
+    },
+    scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"]
+  });
 
-async function getGeminiResponse(promptText) {
-  try {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: `${SYSTEM_PROMPT}\n\nВопрос клиента: ${promptText}` }]
-          }
-        ]
-      })
-    });
+  const sheets = google.sheets({ version: "v4", auth });
 
-    const data = await response.json();
-    console.log("👉 Gemini raw response:", JSON.stringify(data, null, 2));
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: SHEET_RANGE
+  });
 
-    return data?.candidates?.[0]?.content?.parts?.[0]?.text || "Извините, не смог придумать ответ 😅";
-  } catch (e) {
-    console.error("❌ Ошибка Gemini:", e.message);
-    return "Произошла ошибка при генерации ответа. Обратитесь к оператору.";
-  }
+  const rows = res.data.values;
+  if (!rows || rows.length === 0) throw new Error("Таблица пуста или не найдена");
+
+  const faqList = rows.map(([question, answer]) => ({ question, answer }));
+
+  fuse = new Fuse(faqList, {
+    keys: ["question"],
+    threshold: 0.4
+  });
+
+  console.log(`✅ Загружено ${faqList.length} FAQ из Google Таблицы`);
 }
 
-app.post("/webhook", async (req, res) => {
-  res.sendStatus(200);
-
-  const { from, text: messageText, chat_id: chatId, client_id: incomingClientId } = req.body;
-
-  if (from !== "client" || !chatId || !messageText) return;
-  if (incomingClientId !== TEST_CLIENT_ID) return;
-
-  try {
-    let replyText = findFaqAnswer(messageText);
-
-    if (!replyText) {
-      replyText = await getGeminiResponse(messageText);
-    }
-
-    await fetch("https://api.usedesk.ru/chat/sendMessage", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        api_token: USEDESK_API_TOKEN,
-        chat_id: chatId,
-        user_id: OPERATOR_USER_ID,
-        text: replyText
-      })
-    });
-
-    console.log("✅ Ответ от бота отправлен в чат:", replyText);
-  } catch (err) {
-    console.error("❌ Ошибка при отправке в чат:", err.message);
-  }
-});
-
-const PORT = process.env.PORT || 3000;
-
-loadFaq().then(() => {
-  app.listen(PORT, () => console.log("✅ Сервер с ИИ и базой подключен 🚀"));
-}).catch((err) => {
-  console.error("❌ Ошибка загрузки базы FAQ:", err.message);
-});
+export function findFaqAnswer(message) {
+  if (!fuse) return null;
+  const result = fuse.search(message.toLowerCase());
+  return result?.[0]?.item?.answer || null;
+}

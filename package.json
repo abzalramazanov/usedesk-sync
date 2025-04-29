@@ -1,15 +1,21 @@
 {
   "name": "usedeskpayda-webhook",
   "version": "1.0.0",
+  "description": "Автоответчик UseDesk с поддержкой Google Gemini API",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
     "body-parser": "^1.20.2",
+    "express": "^4.18.2",
     "node-fetch": "^3.3.2"
   },
-  "type": "module"
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": ["usedesk", "gemini", "webhook", "support", "whatsapp"],
+  "author": "Abzal AI Team",
+  "license": "MIT"
 }
- 

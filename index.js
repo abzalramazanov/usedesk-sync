@@ -2,6 +2,7 @@
 import express from "express";
 import bodyParser from "body-parser";
 import fetch from "node-fetch";
+import { loadFaq, findFaqAnswer } from "./loadFaqFromSheets.js";
 
 const app = express();
 app.use(bodyParser.json());
@@ -22,9 +23,7 @@ async function getGeminiResponse(promptText) {
         contents: [
           {
             role: "user",
-            parts: [{
-              text: `${SYSTEM_PROMPT}\n\nВопрос клиента: ${promptText}`
-            }]
+            parts: [{ text: `${SYSTEM_PROMPT}\n\nВопрос клиента: ${promptText}` }]
           }
         ]
       })
@@ -49,7 +48,11 @@ app.post("/webhook", async (req, res) => {
   if (incomingClientId !== TEST_CLIENT_ID) return;
 
   try {
-    const replyText = await getGeminiResponse(messageText);
+    let replyText = findFaqAnswer(messageText);
+
+    if (!replyText) {
+      replyText = await getGeminiResponse(messageText);
+    }
 
     await fetch("https://api.usedesk.ru/chat/sendMessage", {
       method: "POST",
@@ -62,11 +65,16 @@ app.post("/webhook", async (req, res) => {
       })
     });
 
-    console.log("✅ Ответ от Gemini отправлен в чат:", replyText);
+    console.log("✅ Ответ от бота отправлен в чат:", replyText);
   } catch (err) {
     console.error("❌ Ошибка при отправке в чат:", err.message);
   }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("✅ Сервер с ИИ подключен и слушает 🚀"));
+
+loadFaq().then(() => {
+  app.listen(PORT, () => console.log("✅ Сервер с ИИ и базой подключен 🚀"));
+}).catch((err) => {
+  console.error("❌ Ошибка загрузки базы FAQ:", err.message);
+});

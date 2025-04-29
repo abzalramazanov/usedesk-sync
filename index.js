@@ -7,47 +7,38 @@ app.use(bodyParser.json());
 
 const USEDESK_API_TOKEN = "12ff4f2af60aee0fe6869cec6e2c8401df7980b7";
 const OPERATOR_USER_ID = 293758;
+const TEST_CLIENT_ID = 175888649; // ← ТВОЙ client_id, только тебе отвечаем
 
 app.post("/webhook", async (req, res) => {
-  console.log("🚀 Входящий вебхук:");
-  console.log(JSON.stringify(req.body, null, 2));
   res.sendStatus(200);
 
-  const from = req.body.from;
-  const messageText = req.body.text;
-  const chatId = req.body.chat_id;
+  const { from, text: messageText, chat_id: chatId, client_id: incomingClientId } = req.body;
 
-  // Обработка только сообщений от клиента
-  if (from !== "client") {
-    console.log("⚠️ Это не клиент. Пропускаем.");
-    return;
-  }
+  // Базовые фильтры
+  if (from !== "client" || !chatId || !messageText) return;
 
-  if (!chatId || !messageText) {
-    console.log("❗ Нет chat_id или текста");
+  // Ограничение только на твой client_id
+  if (incomingClientId !== TEST_CLIENT_ID) {
+    console.log(`⛔ Сообщение не от тебя (client_id: ${incomingClientId}), пропущено.`);
     return;
   }
 
   try {
-    const replyText = "Yeap, бро! Это ответ прямо в WhatsApp чат 🤖";
-
-    const response = await fetch("https://api.usedesk.ru/chat/sendMessage", {
+    await fetch("https://api.usedesk.ru/chat/sendMessage", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         api_token: USEDESK_API_TOKEN,
         chat_id: chatId,
         user_id: OPERATOR_USER_ID,
-        text: replyText
+        text: "Yeap, бро! Ответ получен только тобой 🤫"
       })
     });
-
-    const data = await response.json();
-    console.log("✅ Ответ отправлен в чат:", data);
   } catch (err) {
     console.error("❌ Ошибка при отправке:", err.message);
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("✅ Сервер запущен на порту", PORT));
+app.listen(process.env.PORT || 3000, () => {
+  console.log("✅ Сервер запущен и слушает только тебя 🤝");
+});

@@ -21,12 +21,10 @@ async function getGeminiResponse(promptText) {
       body: JSON.stringify({
         contents: [
           {
-            role: "system",
-            parts: [{ text: SYSTEM_PROMPT }]
-          },
-          {
             role: "user",
-            parts: [{ text: promptText }]
+            parts: [{
+              text: `${SYSTEM_PROMPT}\n\nВопрос клиента: ${promptText}`
+            }]
           }
         ]
       })

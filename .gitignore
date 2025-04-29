@@ -1,0 +1,3 @@
+git rm --cached gen-lang-client-0478738966-27482ff8ccaf.json
+git commit -m "Спрятал ключ через .gitignore"
+git push

@@ -17,10 +17,10 @@ app.post("/webhook", async (req, res) => {
   const messageText = req.body.text;
   const client = req.body.client;
   const ticket = req.body.ticket;
-  const platform = req.body.platform; // ВАЖНО: это наш надёжный индикатор WhatsApp
+  const platform = req.body.platform;
 
   if (from !== "client") {
-    console.log("⚠️ Сообщение не от клиента, пропускаем.");
+    console.log("⚠️ Это не сообщение от клиента. Пропускаем.");
     return;
   }
 
@@ -29,17 +29,18 @@ app.post("/webhook", async (req, res) => {
     return;
   }
 
-  if (platform !== "pact_whatsapp") {
-    console.log(`⚠️ Канал не WhatsApp (${platform}), пропускаем.`);
-    return;
-  }
-
   const clientId = client.id;
   const clientPhone = client.phones?.[0]?.phone;
   const channelId = ticket.channel_id;
 
+  const isWhatsApp = platform === "pact_whatsapp";
+  if (!isWhatsApp) {
+    console.log("⚠️ Это не WhatsApp-канал, пропускаем.");
+    return;
+  }
+
   try {
-    const replyText = "Бро, теперь точно ушло в WhatsApp, всё чётко 🤖";
+    const replyText = "✅ WhatsApp-бот отвечает как надо! 💬";
 
     const response = await fetch("https://api.usedesk.ru/create/ticket", {
       method: "POST",
@@ -57,9 +58,9 @@ app.post("/webhook", async (req, res) => {
     });
 
     const data = await response.json();
-    console.log("✅ Ответ отправлен в WhatsApp:", data);
-  } catch (err) {
-    console.error("❌ Ошибка при отправке:", err.message);
+    console.log("✅ Ответ успешно отправлен:", data);
+  } catch (error) {
+    console.error("❌ Ошибка при отправке:", error.message);
   }
 });
 

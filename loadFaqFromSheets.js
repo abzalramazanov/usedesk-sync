@@ -10,7 +10,7 @@ let fuse = null;
 
 export async function loadFaq() {
   const auth = new google.auth.GoogleAuth({
-    credentials: JSON.parse(readFileSync("./gen-lang-client-0478738966-c4c0abb95c06.json")),
+    credentials: JSON.parse(readFileSync("./gen-lang-client-0478738966-175f6811bbc0.json")),
     scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"]
   });
 

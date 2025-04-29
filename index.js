@@ -20,10 +20,12 @@ async function getGeminiResponse(promptText) {
       body: JSON.stringify({
         contents: [
           {
+            role: "system",
+            parts: [{ text: SYSTEM_PROMPT }]
+          },
+          {
             role: "user",
-            parts: [
-              { text: `${SYSTEM_PROMPT}\n\nВопрос клиента: ${promptText}` }
-            ]
+            parts: [{ text: promptText }]
           }
         ]
       })
@@ -33,7 +35,7 @@ async function getGeminiResponse(promptText) {
     return data?.candidates?.[0]?.content?.parts?.[0]?.text || "Извините, не смог придумать ответ 😅";
   } catch (e) {
     console.error("❌ Ошибка Gemini:", e.message);
-    return "Произошла ошибка при генерации ответа. Пожалуйста, обратитесь к оператору.";
+    return "Произошла ошибка при генерации ответа. Обратитесь к оператору.";
   }
 }
 

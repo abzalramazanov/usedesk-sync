@@ -14,22 +14,23 @@ const SYSTEM_PROMPT = "Ты чат-бот службы поддержки. От�
 
 async function getGeminiResponse(promptText) {
   try {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: "system",
-            parts: [{ text: SYSTEM_PROMPT }]
-          },
-          {
-            role: "user",
-            parts: [{ text: promptText }]
-          }
-        ]
-      })
-    });
+const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    contents: [
+      {
+        role: "system",
+        parts: [{ text: "Ты чат-бот службы поддержки. Отвечай кратко, вежливо и по делу. Если не знаешь — предложи обратиться к оператору." }]
+      },
+      {
+        role: "user",
+        parts: [{ text: promptText }]
+      }
+    ]
+  })
+});
+
 
     const data = await response.json();
     return data?.candidates?.[0]?.content?.parts?.[0]?.text || "Извините, не смог придумать ответ 😅";

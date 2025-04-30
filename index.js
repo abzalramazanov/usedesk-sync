@@ -52,9 +52,9 @@ function buildExtendedPrompt(faq, userMessage) {
   return block;
 }
 
-async function updateTicketStatus(ticketId, status) {
+async function updateTicketStatus(ticketId, status, clientName) {
   try {
-    const response = await fetch("https://api.usedesk.ru/ticket", {
+    const response = await fetch("https://api.usedesk.ru/update/ticket", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -64,7 +64,7 @@ async function updateTicketStatus(ticketId, status) {
       })
     });
     const result = await response.json();
-    console.log("🔁 Статус тикета обновлён:", result);
+    console.log(`🎯 Клиент: ${clientName} | Статус тикета #${ticketId} → ${status}`);
   } catch (err) {
     console.error("❌ Ошибка обновления статуса тикета:", err);
   }
@@ -80,18 +80,16 @@ app.post("/", async (req, res) => {
   if (!data || !data.text || data.from !== "client") return res.sendStatus(200);
   if (data.client_id != CLIENT_ID_LIMITED) return res.sendStatus(200);
   if (data.ticket?.assignee_id !== null || data.ticket?.group !== null) {
-    console.log("⛔ Пропущено: у тикета уже есть исполнитель или группа");
     return res.sendStatus(200);
   }
 
   const chat_id = data.chat_id;
   const message = data.text;
   const ticket_id = data.ticket?.id;
+  const client_name = data.client?.name || "Неизвестно";
   console.log("🚀 Получено сообщение:", message);
 
   const fullPrompt = systemPrompt + "\n\n" + buildExtendedPrompt(faq, message);
-  console.log("📤 fullPrompt →", fullPrompt.slice(0, 300), "...");
-
   let aiAnswer = "Извините, не смог придумать ответ 😅";
   let isUnrecognized = false;
 
@@ -118,7 +116,7 @@ app.post("/", async (req, res) => {
       aiAnswer = "К этому вопросу подключится наш менеджер, пожалуйста, ожидайте 🙌";
 
       try {
-        const assignRes = await fetch("https://api.usedesk.ru/chat/changeAssignee", {
+        await fetch("https://api.usedesk.ru/chat/changeAssignee", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -127,8 +125,7 @@ app.post("/", async (req, res) => {
             user_id: 293758
           })
         });
-        const assignData = await assignRes.json();
-        console.log("🔄 Назначен менеджер на чат:", assignData);
+        console.log(`🔄 Менеджер назначен клиенту: ${client_name}`);
       } catch (err) {
         console.error("❌ Ошибка назначения менеджера:", err);
       }
@@ -153,10 +150,9 @@ app.post("/", async (req, res) => {
     console.error("❌ Ошибка отправки в Usedesk:", err);
   }
 
-  // Обновление статуса тикета
   if (ticket_id && !isUnrecognized) {
     const status = isAskingClarification(aiAnswer) ? 6 : 2;
-    await updateTicketStatus(ticket_id, status);
+    await updateTicketStatus(ticket_id, status, client_name);
   }
 
   res.sendStatus(200);

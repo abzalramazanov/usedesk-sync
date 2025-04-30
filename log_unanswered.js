@@ -1,42 +1,45 @@
 import fs from "fs";
+import path from "path";
 
-const path = "/tmp/unanswered_questions.json";
+const logFilePath = "/tmp/unanswered_questions.json";
 
-export function isUnrecognizedResponse(text) {
-  const lowered = text.toLowerCase();
-  return (
-    lowered.includes("не нашёл ответа") ||
-    lowered.includes("не знаю") ||
-    lowered.includes("не понимаю") ||
-    lowered.includes("не могу помочь") ||
-    lowered.includes("обратитесь") ||
-    lowered.includes("оператор") ||
-    lowered.includes("выходит за рамки") ||
-    lowered.includes("информации нет") ||
-    lowered.includes("не обладаю") ||
-    text.trim().length < 10
-  );
-}
-
-export function logUnanswered(question, clientId = null) {
-  const entry = {
-    question,
-    clientId,
-    timestamp: new Date().toISOString()
-  };
-
+export function logUnanswered(question, clientId) {
   let log = [];
-  if (fs.existsSync(path)) {
+  if (fs.existsSync(logFilePath)) {
     try {
-      log = JSON.parse(fs.readFileSync(path, "utf8"));
-    } catch (e) {
-      console.error("❌ Ошибка чтения файла:", e.message);
+      const content = fs.readFileSync(logFilePath, "utf-8");
+      log = JSON.parse(content);
+    } catch (err) {
+      console.error("⚠️ Не удалось прочитать лог:", err);
     }
   }
 
-  log.push(entry);
-  fs.writeFileSync(path, JSON.stringify(log, null, 2));
-  console.log("📝 Записано в лог-файл:", path);
-  console.log("📂 Содержимое лога:");
-  console.log(JSON.stringify(log, null, 2));
+  log.push({
+    question,
+    clientId,
+    timestamp: new Date().toISOString()
+  });
+
+  try {
+    fs.writeFileSync(logFilePath, JSON.stringify(log, null, 2), "utf-8");
+    console.log("📝 Записано в лог-файл:", logFilePath);
+    console.log("📂 Содержимое лога:\n", log);
+  } catch (err) {
+    console.error("❌ Ошибка записи лога:", err);
+  }
+}
+
+export function isUnrecognizedResponse(answer) {
+  if (!answer || answer.trim() === "") return true;
+
+  const strongTriggers = [
+    "я не знаю",
+    "мне неизвестно",
+    "не могу помочь",
+    "вне моей компетенции",
+    "затрудняюсь ответить"
+  ];
+
+  const normalized = answer.toLowerCase();
+  return strongTriggers.some(trigger => normalized.includes(trigger));
 }

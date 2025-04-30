@@ -1,3 +1,8 @@
+console.log("🧪 Переменные окружения:");
+console.log("USEDESK_API_TOKEN:", process.env.USEDESK_API_TOKEN ? "✅" : "❌ NOT SET");
+console.log("USEDESK_USER_ID:", process.env.USEDESK_USER_ID ? "✅" : "❌ NOT SET");
+console.log("GOOGLE_CLIENT_EMAIL:", process.env.GOOGLE_CLIENT_EMAIL ? "✅" : "❌ NOT SET");
+console.log("GOOGLE_PRIVATE_KEY:", process.env.GOOGLE_PRIVATE_KEY ? "✅" : "❌ NOT SET");
 
 // index.js — основной сервер
 

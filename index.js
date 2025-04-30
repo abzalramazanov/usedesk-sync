@@ -52,6 +52,24 @@ function buildExtendedPrompt(faq, userMessage) {
   return block;
 }
 
+async function updateTicketStatus(ticketId, status) {
+  try {
+    const response = await fetch("https://api.usedesk.ru/ticket", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        api_token: USEDESK_API_TOKEN,
+        ticket_id: ticketId,
+        status_id: status
+      })
+    });
+    const result = await response.json();
+    console.log("🔁 Статус тикета обновлён:", result);
+  } catch (err) {
+    console.error("❌ Ошибка обновления статуса тикета:", err);
+  }
+}
+
 app.post("/", async (req, res) => {
   const data = req.body;
   if (!data || !data.text || data.from !== "client") return res.sendStatus(200);
@@ -63,12 +81,14 @@ app.post("/", async (req, res) => {
 
   const chat_id = data.chat_id;
   const message = data.text;
+  const ticket_id = data.ticket?.id;
   console.log("🚀 Получено сообщение:", message);
 
   const fullPrompt = systemPrompt + "\n\n" + buildExtendedPrompt(faq, message);
   console.log("📤 fullPrompt →", fullPrompt.slice(0, 300), "...");
 
   let aiAnswer = "Извините, не смог придумать ответ 😅";
+  let isUnrecognized = false;
 
   try {
     const geminiRes = await fetch(
@@ -88,6 +108,7 @@ app.post("/", async (req, res) => {
     console.log("🤖 Ответ от Gemini:", aiAnswer);
 
     if (isUnrecognizedResponse(aiAnswer)) {
+      isUnrecognized = true;
       logUnanswered(message, data.client_id);
       aiAnswer = "К этому вопросу подключится наш менеджер, пожалуйста, ожидайте 🙌";
 
@@ -107,13 +128,12 @@ app.post("/", async (req, res) => {
         console.error("❌ Ошибка назначения менеджера:", err);
       }
     }
-
   } catch (err) {
     console.error("❌ Ошибка Gemini:", err);
   }
 
   try {
-    const usedeskRes = await fetch("https://api.usedesk.ru/chat/sendMessage", {
+    await fetch("https://api.usedesk.ru/chat/sendMessage", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -123,11 +143,14 @@ app.post("/", async (req, res) => {
         text: aiAnswer
       })
     });
-
-    const usedeskData = await usedeskRes.json();
-    console.log("✅ Ответ отправлен клиенту:", usedeskData);
+    console.log("✅ Ответ отправлен клиенту");
   } catch (err) {
     console.error("❌ Ошибка отправки в Usedesk:", err);
+  }
+
+  // Обновление статуса тикета — только если ИИ дал ответ
+  if (ticket_id && !isUnrecognized) {
+    await updateTicketStatus(ticket_id, 2); // 2 — выполнен
   }
 
   res.sendStatus(200);

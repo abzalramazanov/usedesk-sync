@@ -114,6 +114,24 @@ app.post("/", async (req, res) => {
   const data = req.body;
   if (!data || !data.text || data.from !== "client") return res.sendStatus(200);
   if (data.client_id != CLIENT_ID_LIMITED) return res.sendStatus(200);
+  
+const simpleGreetings = ["здравствуйте", "привет", "добрый день", "йо", "салам"];
+
+if (simpleGreetings.includes(data.text.toLowerCase().trim())) {
+  const greetReply = "Здравствуйте! Чем могу помочь?";
+  await fetch("https://api.usedesk.ru/chat/sendMessage", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      api_token: USEDESK_API_TOKEN,
+      chat_id: data.chat_id,
+      user_id: USEDESK_USER_ID,
+      text: greetReply
+    })
+  });
+  console.log("✅ Отправлено приветствие без логики ИИ");
+  return res.sendStatus(200);
+}
 
   const chat_id = data.chat_id;
   const message = data.text;

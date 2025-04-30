@@ -70,6 +70,11 @@ async function updateTicketStatus(ticketId, status) {
   }
 }
 
+function isAskingClarification(answer) {
+  const clarifiers = ["уточните", "что именно", "можете уточнить", "не совсем понял", "уточните, пожалуйста", "могли бы пояснить"];
+  return clarifiers.some(word => answer.toLowerCase().includes(word));
+}
+
 app.post("/", async (req, res) => {
   const data = req.body;
   if (!data || !data.text || data.from !== "client") return res.sendStatus(200);
@@ -148,9 +153,10 @@ app.post("/", async (req, res) => {
     console.error("❌ Ошибка отправки в Usedesk:", err);
   }
 
-  // Обновление статуса тикета — только если ИИ дал ответ
+  // Обновление статуса тикета
   if (ticket_id && !isUnrecognized) {
-    await updateTicketStatus(ticket_id, 2); // 2 — выполнен
+    const status = isAskingClarification(aiAnswer) ? 6 : 2;
+    await updateTicketStatus(ticket_id, status);
   }
 
   res.sendStatus(200);

@@ -1,8 +1,9 @@
-// index.js
+
 import express from "express";
 import fetch from "node-fetch";
 import bodyParser from "body-parser";
 import dotenv from "dotenv";
+import { logUnanswered, isUnrecognizedResponse } from "./log_unanswered.js";
 dotenv.config();
 
 const app = express();
@@ -12,9 +13,9 @@ const PORT = process.env.PORT || 10000;
 const USEDESK_API_TOKEN = process.env.USEDESK_API_TOKEN;
 const USEDESK_USER_ID = process.env.USEDESK_USER_ID;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const CLIENT_ID_LIMITED = "175888649"; // Только этому клиенту отвечаем
+const CLIENT_ID_LIMITED = "175888649";
 
-console.log("\n\u{1F9EA} Переменные окружения:");
+console.log("\n🧪 Переменные окружения:");
 console.log("USEDESK_API_TOKEN:", USEDESK_API_TOKEN ? "✅" : "❌ NOT SET");
 console.log("USEDESK_USER_ID:", USEDESK_USER_ID ? "✅" : "❌ NOT SET");
 console.log("GEMINI_API_KEY:", GEMINI_API_KEY ? "✅" : "❌ NOT SET");
@@ -88,6 +89,11 @@ app.post("/", async (req, res) => {
     const geminiData = await geminiRes.json();
     aiAnswer = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || aiAnswer;
     console.log("🤖 Ответ от Gemini:", aiAnswer);
+
+    if (isUnrecognizedResponse(aiAnswer)) {
+      logUnanswered(message, data.client_id);
+    }
+
   } catch (err) {
     console.error("❌ Ошибка Gemini:", err);
   }

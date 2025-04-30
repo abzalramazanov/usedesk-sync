@@ -54,16 +54,16 @@ const systemPrompt = `
 `;
 
 function buildExtendedPrompt(faq, userMessage) {
-  let block = \`Дополнительная база вопросов и ответов:\n`;
+  let block = `Дополнительная база вопросов и ответов:\n`;
   faq.forEach((item, i) => {
-    block += \`\${i + 1}. Вопрос: \${item.question}\nОтвет: \${item.answer}\n\n`;
+    block += `\${i + 1}. Вопрос: \${item.question}\nОтвет: \${item.answer}\n\n`;
     if (item.aliases && item.aliases.length > 0) {
       item.aliases.forEach(alias => {
-        block += \`Альтернативный вопрос: \${alias}\nОтвет: \${item.answer}\n\n`;
+        block += `Альтернативный вопрос: \${alias}\nОтвет: \${item.answer}\n\n`;
       });
     }
   });
-  block += \`Если и среди этих вопросов нет точного совпадения — честно скажи, что не знаешь и предложи обратиться к оператору.\n\nВопрос клиента: "\${userMessage}"\nОтвет:`;
+  block += `Если и среди этих вопросов нет точного совпадения — честно скажи, что не знаешь и предложи обратиться к оператору.\n\nВопрос клиента: "\${userMessage}"\nОтвет:`;
   return block;
 }
 
@@ -76,13 +76,13 @@ app.post("/", async (req, res) => {
   const message = data.text;
   console.log("🚀 Получено сообщение:", message);
 
-  const fullPrompt = \`\${systemPrompt}\n\n\${buildExtendedPrompt(faq, message)}`;
+  const fullPrompt = `\${systemPrompt}\n\n\${buildExtendedPrompt(faq, message)}`;
 
   let aiAnswer = "Извините, не смог придумать ответ 😅";
 
   try {
     const geminiRes = await fetch(
-      \`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=\${GEMINI_API_KEY}\`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=\${GEMINI_API_KEY}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -129,5 +129,5 @@ app.post("/", async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(\`✅ Сервер работает на порту \${PORT}\`);
+  console.log(`✅ Сервер работает на порту \${PORT}`);
 });

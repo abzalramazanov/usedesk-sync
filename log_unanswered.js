@@ -3,9 +3,14 @@ import fs from "fs";
 const path = "./unanswered_questions.json";
 
 export function isUnrecognizedResponse(text) {
+  const lowered = text.toLowerCase();
   return (
-    text.toLowerCase().includes("не нашёл ответа") ||
-    text.toLowerCase().includes("не понимаю") ||
+    lowered.includes("не нашёл ответа") ||
+    lowered.includes("не понимаю") ||
+    lowered.includes("не уверен") ||
+    lowered.includes("обратитесь к оператору") ||
+    lowered.includes("выйдет за рамки") ||
+    lowered.includes("выходит за рамки") ||
     text.trim().length < 10
   );
 }

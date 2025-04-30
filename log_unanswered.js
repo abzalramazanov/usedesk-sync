@@ -1,7 +1,7 @@
 
 import fs from "fs";
 
-const path = "/tmp/unanswered_questions.json"; // путь для Render
+const path = "/tmp/unanswered_questions.json"; // Render-friendly path
 
 export function isUnrecognizedResponse(text) {
   const lowered = text.toLowerCase();
@@ -38,4 +38,6 @@ export function logUnanswered(question, clientId = null) {
   log.push(entry);
   fs.writeFileSync(path, JSON.stringify(log, null, 2));
   console.log("📝 Записано в лог-файл:", path);
+  console.log("📂 Содержимое лога нераспознанных вопросов:");
+  console.log(JSON.stringify(log, null, 2)); // 👈 это отобразится в Render Logs
 }

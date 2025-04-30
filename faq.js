@@ -1,5 +1,4 @@
-
-// faq.js — локальная база вопросов и ответов
+import Fuse from "fuse.js";
 
 const faqList = [
   { question: "сколько стоят услуги", answer: "Услуги стоят 500тг в месяц." },
@@ -9,4 +8,12 @@ const faqList = [
   { question: "что делать если документы не пришли", answer: "Убедитесь, что выбрали нас как провайдера в ЯндексПро и зарегистрировались на сайте." }
 ];
 
-export default faqList;
+const fuse = new Fuse(faqList, {
+  keys: ["question"],
+  threshold: 0.4 // можно поднять до 0.5–0.6 если нужно ловить даже "где докмтны"
+});
+
+export function findFaqAnswer(message) {
+  const result = fuse.search(message.toLowerCase());
+  return result?.[0]?.item?.answer || null;
+}

@@ -71,7 +71,16 @@ async function updateTicketStatus(ticketId, status, clientName) {
 }
 
 function isAskingClarification(answer) {
-  const clarifiers = ["уточните", "что именно", "можете уточнить", "не совсем понял", "уточните, пожалуйста", "могли бы пояснить"];
+  const clarifiers = [ "уточните",
+  "что именно",
+  "можете уточнить",
+  "не совсем понял",
+  "уточните, пожалуйста",
+  "могли бы пояснить",
+  "не могли бы уточнить",
+  "что именно вас интересует",
+  "могли бы подробнее",
+  "не совсем ясно", "напишите подробнее"];
   return clarifiers.some(word => answer.toLowerCase().includes(word));
 }
 

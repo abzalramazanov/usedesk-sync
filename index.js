@@ -4,7 +4,6 @@ import fetch from "node-fetch";
 import bodyParser from "body-parser";
 import dotenv from "dotenv";
 import { logUnanswered, isUnrecognizedResponse } from "./log_unanswered.js";
-import { faq } from "./faq.js";
 dotenv.config();
 
 const app = express();
@@ -16,7 +15,7 @@ const USEDESK_USER_ID = process.env.USEDESK_USER_ID;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const CLIENT_ID_LIMITED = "175888649";
 
-const systemPrompt = `
+const systemPrompt = \`
 Ты — агент клиентской поддержки сервиса Payda ЭДО. Отвечай лаконично, вежливо и по делу. Используй разговорный, но профессиональный стиль. Основывайся на следующих вопросах и ответах:
 
 1. Сколько стоят услуги? — Услуги стоят 500 тг в месяц.
@@ -50,32 +49,8 @@ const systemPrompt = `
 29. Я не успел подписать в прошлом месяце — Обратитесь к оператору, возможно повторное подписание.
 30. Кто видит мои документы? — Только вы и ваш провайдер.
 
-Если не нашёл нужного ответа в этом списке — постарайся найти похожий вопрос в дополнительной базе ниже.
-`;
-
-function buildExtendedPrompt(faq, userMessage) {
-  let block = `Дополнительная база вопросов и ответов:
-`;
-  faq.forEach((item, i) => {
-    block += `${i + 1}. Вопрос: ${item.question}
-Ответ: ${item.answer}
-
-`;
-    if (item.aliases && item.aliases.length > 0) {
-      item.aliases.forEach(alias => {
-        block += `Альтернативный вопрос: ${alias}
-Ответ: ${item.answer}
-
-`;
-      });
-    }
-  });
-  block += `Если и среди этих вопросов нет точного совпадения — честно скажи, что не знаешь и предложи обратиться к оператору.
-
-Вопрос клиента: "\${userMessage}"
-Ответ:`;
-  return block;
-}
+Если не знаешь ответа — честно скажи клиенту и предложи обратиться к оператору.
+\`;
 
 app.post("/", async (req, res) => {
   const data = req.body;
@@ -86,21 +61,17 @@ app.post("/", async (req, res) => {
   const message = data.text;
   console.log("🚀 Получено сообщение:", message);
 
-  const fullPrompt = `\${systemPrompt}
-
-\${buildExtendedPrompt(faq, message)}`;
-
   let aiAnswer = "Извините, не смог придумать ответ 😅";
 
   try {
     const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=\${GEMINI_API_KEY}`,
+      \`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=\${GEMINI_API_KEY}\`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [
-            { role: "user", parts: [{ text: fullPrompt }] }
+            { role: "user", parts: [{ text: systemPrompt + "\n\nКлиент: " + message }] }
           ]
         })
       }
@@ -141,5 +112,5 @@ app.post("/", async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`✅ Сервер работает на порту \${PORT}`);
+  console.log(\`✅ Сервер работает на порту \${PORT}\`);
 });

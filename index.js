@@ -1,6 +1,5 @@
 import express from "express";
 import fetch from "node-fetch";
-import { findFaqAnswer } from "./faq.js"; // если ты используешь Google Sheets — иначе убери
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -13,12 +12,10 @@ const USEDESK_API_TOKEN = process.env.USEDESK_API_TOKEN;
 const USEDESK_USER_ID = process.env.USEDESK_USER_ID;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-// Проверка переменных окружения
 console.log("🧪 Переменные окружения:");
 console.log("USEDESK_API_TOKEN:", USEDESK_API_TOKEN ? "✅" : "❌ NOT SET");
 console.log("USEDESK_USER_ID:", USEDESK_USER_ID ? "✅" : "❌ NOT SET");
-console.log("GOOGLE_CLIENT_EMAIL:", process.env.GOOGLE_CLIENT_EMAIL ? "✅" : "❌");
-console.log("GOOGLE_PRIVATE_KEY:", process.env.GOOGLE_PRIVATE_KEY ? "✅" : "❌");
+console.log("GEMINI_API_KEY:", GEMINI_API_KEY ? "✅" : "❌ NOT SET");
 
 app.get("/", (req, res) => {
   res.send("✅ Usedesk AI Webhook активен");
@@ -43,11 +40,7 @@ app.post("/", async (req, res) => {
     return res.sendStatus(200);
   }
 
-  let reply = findFaqAnswer(messageText); // Попробуем ответ из базы (если есть)
-
-  if (!reply) {
-    reply = await getGeminiReply(messageText);
-  }
+  let reply = await getGeminiReply(messageText);
 
   if (!reply) {
     reply = "Извините, не смог придумать ответ 😅";

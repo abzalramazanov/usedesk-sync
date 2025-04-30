@@ -60,7 +60,7 @@ async function updateTicketStatus(ticketId, status, clientName) {
       body: JSON.stringify({
         api_token: USEDESK_API_TOKEN,
         ticket_id: ticketId,
-        status_id: status
+        status: String(status) // <== тут ключ 'status', не 'status_id'
       })
     });
     const result = await response.json();

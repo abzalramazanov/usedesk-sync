@@ -1,6 +1,5 @@
+// log_unanswered.js
 import fs from "fs";
-
-const path = "./unanswered_questions.json";
 
 export function isUnrecognizedResponse(text) {
   const lowered = text.toLowerCase();
@@ -9,13 +8,13 @@ export function isUnrecognizedResponse(text) {
     lowered.includes("не понимаю") ||
     lowered.includes("не уверен") ||
     lowered.includes("обратитесь к оператору") ||
-    lowered.includes("выйдет за рамки") ||
     lowered.includes("выходит за рамки") ||
     text.trim().length < 10
   );
 }
 
 export function logUnanswered(question, clientId = null) {
+  const path = "./unanswered_questions.json";
   const entry = {
     question,
     clientId,

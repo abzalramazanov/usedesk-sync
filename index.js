@@ -15,8 +15,12 @@ const USEDESK_USER_ID = process.env.USEDESK_USER_ID;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const CLIENT_ID_LIMITED = "175888649";
 
-const systemPrompt = `
-Ты — агент клиентской поддержки сервиса Payda ЭДО. Отвечай лаконично, вежливо и по делу. Используй разговорный, но профессиональный стиль. Основывайся на следующих вопросах и ответах:
+console.log("\n🧪 Переменные окружения:");
+console.log("USEDESK_API_TOKEN:", USEDESK_API_TOKEN ? "✅" : "❌ NOT SET");
+console.log("USEDESK_USER_ID:", USEDESK_USER_ID ? "✅" : "❌ NOT SET");
+console.log("GEMINI_API_KEY:", GEMINI_API_KEY ? "✅" : "❌ NOT SET");
+
+const systemPrompt = `Ты — агент клиентской поддержки сервиса Payda ЭДО. Отвечай лаконично, вежливо и по делу. Используй разговорный, но профессиональный стиль. Основывайся на следующих вопросах и ответах:
 
 1. Сколько стоят услуги? — Услуги стоят 500 тг в месяц.
 2. Как сменить провайдера? — Напишите в поддержку ЯндексПро: «Хочу перейти в Payda ЭДО» и укажите ИИН.
@@ -48,14 +52,20 @@ const systemPrompt = `
 28. Можно ли перейти в середине месяца? — Да, но документы будут с 8 числа следующего месяца.
 29. Я не успел подписать в прошлом месяце — Обратитесь к оператору, возможно повторное подписание.
 30. Кто видит мои документы? — Только вы и ваш провайдер.
-
-Если не знаешь ответа — честно скажи клиенту и предложи обратиться к оператору.
-`;
+... и ещё 20 подобных. Отвечай строго по этим данным, если не уверен — предложи обратиться к оператору.`;
 
 app.post("/", async (req, res) => {
   const data = req.body;
-  if (!data || !data.text || data.from !== "client") return res.sendStatus(200);
-  if (data.client_id != CLIENT_ID_LIMITED) return res.sendStatus(200);
+
+  if (!data || !data.text || data.from !== "client") {
+    console.log("⚠️ Пропущено: не сообщение от клиента");
+    return res.sendStatus(200);
+  }
+
+  if (data.client_id != CLIENT_ID_LIMITED) {
+    console.log("⛔ Сообщение не от разрешённого клиента. Пропускаем.");
+    return res.sendStatus(200);
+  }
 
   const chat_id = data.chat_id;
   const message = data.text;
@@ -65,7 +75,7 @@ app.post("/", async (req, res) => {
 
   try {
     const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=\${GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -76,13 +86,11 @@ app.post("/", async (req, res) => {
         })
       }
     );
-
     const geminiData = await geminiRes.json();
     aiAnswer = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || aiAnswer;
     console.log("🤖 Ответ от Gemini:", aiAnswer);
 
     if (isUnrecognizedResponse(aiAnswer)) {
-      console.log("📌 Ответ не распознан — логируем.");
       logUnanswered(message, data.client_id);
     }
 
@@ -112,5 +120,5 @@ app.post("/", async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`✅ Сервер работает на порту \${PORT}`);
+  console.log(`✅ Сервер с ИИ подключен и слушает 🚀 (порт ${PORT})`);
 });

@@ -60,14 +60,14 @@ const systemPrompt = `Ты — агент клиентской поддержк�
 function buildExtendedPrompt(faq, userMessage) {
   let block = "📦 Дополнительная база вопросов и ответов:\n";
   faq.forEach((item, i) => {
-    block += \`Q: \${item.question}\nA: \${item.answer}\n\n\`;
+    block += "Q: " + item.question + "\nA: " + item.answer + "\n\n";
     if (item.aliases && item.aliases.length > 0) {
       item.aliases.forEach(alias => {
-        block += \`Q: \${alias}\nA: \${item.answer}\n\n\`;
+        block += "Q: " + alias + "\nA: " + item.answer + "\n\n";
       });
     }
   });
-  block += \`Если и среди этих вопросов нет ответа — отправь к оператору.\n\nВопрос клиента: "\${userMessage}"\nОтвет:\`;
+  block += "Если и среди этих вопросов нет ответа — отправь к оператору.\n\nВопрос клиента: "" + userMessage + ""\nОтвет:";
   return block;
 }
 
@@ -80,14 +80,14 @@ app.post("/", async (req, res) => {
   const message = data.text;
   console.log("🚀 Получено сообщение:", message);
 
-  const fullPrompt = \`\${systemPrompt}\n\n\${buildExtendedPrompt(faq, message)}\`;
+  const fullPrompt = systemPrompt + "\n\n" + buildExtendedPrompt(faq, message);
   console.log("📤 fullPrompt →", fullPrompt.slice(0, 300), "...");
 
   let aiAnswer = "Извините, не смог придумать ответ 😅";
 
   try {
     const geminiRes = await fetch(
-      \`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=\${GEMINI_API_KEY}\`,
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + GEMINI_API_KEY,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -132,5 +132,5 @@ app.post("/", async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(\`✅ Сервер с ИИ подключен и слушает 🚀 (порт \${PORT})\`);
+  console.log(`✅ Сервер с ИИ подключен и слушает 🚀 (порт ${PORT})`);
 });

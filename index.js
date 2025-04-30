@@ -1,9 +1,9 @@
+// index.js
 import express from "express";
 import fetch from "node-fetch";
 import bodyParser from "body-parser";
 import dotenv from "dotenv";
-import faqList from "./faq.js";
-import Fuse from "fuse.js";
+import { searchFaq } from "./faq.js";
 
 dotenv.config();
 
@@ -20,11 +20,6 @@ console.log("USEDESK_API_TOKEN:", USEDESK_API_TOKEN ? "✅" : "❌ NOT SET");
 console.log("USEDESK_USER_ID:", USEDESK_USER_ID ? "✅" : "❌ NOT SET");
 console.log("GEMINI_API_KEY:", GEMINI_API_KEY ? "✅" : "❌ NOT SET");
 
-const fuse = new Fuse(faqList, {
-  keys: ["question"],
-  threshold: 0.4,
-});
-
 app.post("/", async (req, res) => {
   const data = req.body;
 
@@ -39,12 +34,11 @@ app.post("/", async (req, res) => {
 
   console.log("🚀 Получено сообщение:", message);
 
-  // 1. Пробуем найти ответ в локальной базе
-  const match = fuse.search(message.toLowerCase());
-  let aiAnswer = match?.[0]?.item?.answer;
+  // Сначала пробуем найти ответ в локальной базе
+  let aiAnswer = searchFaq(message);
 
-  // 2. Если не найдено — спрашиваем у Gemini
   if (!aiAnswer) {
+    // Если не нашли — спрашиваем у Gemini
     const prompt = `Ты чат-бот службы поддержки. Отвечай кратко, вежливо и по делу. Если не знаешь — предложи обратиться к оператору.\n\nКлиент: ${message}`;
     aiAnswer = "Извините, не смог придумать ответ 😅";
 
@@ -55,22 +49,21 @@ app.post("/", async (req, res) => {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            contents: [{ role: "user", parts: [{ text: prompt }] }],
-          }),
+            contents: [{ role: "user", parts: [{ text: prompt }] }]
+          })
         }
       );
 
       const geminiData = await geminiRes.json();
       aiAnswer = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || aiAnswer;
-      console.log("✅ Ответ от Gemini отправлен в чат:", aiAnswer);
+      console.log("✅ Ответ от Gemini:", aiAnswer);
     } catch (error) {
-      console.error("❌ Ошибка запроса к Gemini:", error);
+      console.error("❌ Ошибка при запросе к Gemini:", error);
     }
   } else {
-    console.log("✅ Ответ найден в локальной базе:", aiAnswer);
+    console.log("📚 Ответ найден в FAQ:", aiAnswer);
   }
 
-  // 3. Отправляем ответ в чат Usedesk
   try {
     const response = await fetch("https://api.usedesk.ru/chat/sendMessage", {
       method: "POST",
@@ -79,14 +72,14 @@ app.post("/", async (req, res) => {
         api_token: USEDESK_API_TOKEN,
         chat_id,
         user_id: USEDESK_USER_ID,
-        text: aiAnswer,
-      }),
+        text: aiAnswer
+      })
     });
 
     const result = await response.json();
     console.log("✅ Ответ отправлен клиенту:", result);
   } catch (error) {
-    console.error("❌ Ошибка отправки в Usedesk:", error);
+    console.error("❌ Ошибка отправки сообщения в Usedesk:", error);
   }
 
   res.sendStatus(200);

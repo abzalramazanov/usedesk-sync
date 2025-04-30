@@ -90,8 +90,12 @@ app.post("/", async (req, res) => {
     aiAnswer = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || aiAnswer;
     console.log("🤖 Ответ от Gemini:", aiAnswer);
 
+    console.log("🧪 Проверяем, нужно ли логировать...");
     if (isUnrecognizedResponse(aiAnswer)) {
+      console.log("📌 Ответ ИИ не распознан, логируем в unanswered_questions.json");
       logUnanswered(message, data.client_id);
+    } else {
+      console.log("✅ Ответ выглядит как валидный, логирование пропущено");
     }
 
   } catch (err) {

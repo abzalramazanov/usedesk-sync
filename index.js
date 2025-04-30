@@ -172,10 +172,29 @@ if (simpleGreetings.includes(data.text.toLowerCase().trim())) {
 
     console.log("🤖 Ответ от Gemini:", aiAnswer);
 
-    if (isUnrecognizedResponse(aiAnswer)) {
-      isUnrecognized = true;
-      logUnanswered(message, data.client_id);
-      aiAnswer = "К этому вопросу подключится наш менеджер, пожалуйста, ожидайте 🙌";
+  // Проверка: нормальный ли ответ
+if (isUnrecognizedResponse(aiAnswer)) {
+  isUnrecognized = true;
+  logUnanswered(message, data.client_id);
+  aiAnswer = "К этому вопросу подключится наш менеджер, пожалуйста, ожидайте 🙌";
+
+  try {
+    await fetch("https://api.usedesk.ru/chat/changeAssignee", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        api_token: USEDESK_API_TOKEN,
+        chat_id: chat_id,
+        user_id: 293758
+      })
+    });
+    console.log(`🔄 Менеджер назначен клиенту: ${client_name}`);
+  } catch (err) {
+    console.error("❌ Ошибка назначения менеджера:", err);
+  }
+} else {
+  console.log("📩 Ответ подходит, не назначаем менеджера");
+}
 
       try {
         await fetch("https://api.usedesk.ru/chat/changeAssignee", {

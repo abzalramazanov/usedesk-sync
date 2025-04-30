@@ -58,6 +58,12 @@ app.post("/", async (req, res) => {
   if (!data || !data.text || data.from !== "client") return res.sendStatus(200);
   if (data.client_id != CLIENT_ID_LIMITED) return res.sendStatus(200);
 
+  // ✅ Только если нет исполнителя и группы
+  if (data.ticket?.assignee_id !== null || data.ticket?.group !== null) {
+    console.log("⛔ Пропущено: у тикета уже есть исполнитель или группа");
+    return res.sendStatus(200);
+  }
+
   const chat_id = data.chat_id;
   const message = data.text;
   console.log("🚀 Получено сообщение:", message);

@@ -4,6 +4,7 @@ import fetch from "node-fetch";
 import bodyParser from "body-parser";
 import dotenv from "dotenv";
 import { logUnanswered, isUnrecognizedResponse } from "./log_unanswered.js";
+import { faq } from "./faq.js"; // Вопросы с алиасами
 dotenv.config();
 
 const app = express();
@@ -14,11 +15,6 @@ const USEDESK_API_TOKEN = process.env.USEDESK_API_TOKEN;
 const USEDESK_USER_ID = process.env.USEDESK_USER_ID;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const CLIENT_ID_LIMITED = "175888649";
-
-console.log("\n🧪 Переменные окружения:");
-console.log("USEDESK_API_TOKEN:", USEDESK_API_TOKEN ? "✅" : "❌ NOT SET");
-console.log("USEDESK_USER_ID:", USEDESK_USER_ID ? "✅" : "❌ NOT SET");
-console.log("GEMINI_API_KEY:", GEMINI_API_KEY ? "✅" : "❌ NOT SET");
 
 const systemPrompt = `Ты — агент клиентской поддержки сервиса Payda ЭДО. Отвечай лаконично, вежливо и по делу. Используй разговорный, но профессиональный стиль. Основывайся на следующих вопросах и ответах:
 
@@ -54,48 +50,68 @@ const systemPrompt = `Ты — агент клиентской поддержк�
 30. Кто видит мои документы? — Только вы и ваш провайдер.
 ... и ещё 20 подобных. Отвечай строго по этим данным, если не уверен — предложи обратиться к оператору.`;
 
+function buildExtendedPrompt(faq, userMessage) {
+  let block = "Дополнительная база вопросов и ответов:
+";
+  faq.forEach((item, i) => {
+    block += `${i + 1}. Вопрос: ${item.question}
+Ответ: ${item.answer}
+
+`;
+    if (item.aliases && item.aliases.length > 0) {
+      item.aliases.forEach(alias => {
+        block += `Альтернативный вопрос: ${alias}
+Ответ: ${item.answer}
+
+`;
+      });
+    }
+  });
+  block += `
+Если и среди этих вопросов нет точного совпадения — честно скажи, что не знаешь и предложи обратиться к оператору.
+
+`;
+  block += `Вопрос клиента: "${userMessage}"
+Ответ:`;
+  return block;
+}
+
 app.post("/", async (req, res) => {
   const data = req.body;
-
-  if (!data || !data.text || data.from !== "client") {
-    console.log("⚠️ Пропущено: не сообщение от клиента");
-    return res.sendStatus(200);
-  }
-
-  if (data.client_id != CLIENT_ID_LIMITED) {
-    console.log("⛔ Сообщение не от разрешённого клиента. Пропускаем.");
-    return res.sendStatus(200);
-  }
+  if (!data || !data.text || data.from !== "client") return res.sendStatus(200);
+  if (data.client_id != CLIENT_ID_LIMITED) return res.sendStatus(200);
 
   const chat_id = data.chat_id;
   const message = data.text;
   console.log("🚀 Получено сообщение:", message);
 
+  const fullPrompt = `${top30Prompt}
+
+${buildExtendedPrompt(faq, message)}`;
+
   let aiAnswer = "Извините, не смог придумать ответ 😅";
 
   try {
     const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      \`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=\${GEMINI_API_KEY}\`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [
-            { role: "user", parts: [{ text: `${systemPrompt}\n\nКлиент: ${message}` }] }
+            { role: "user", parts: [{ text: fullPrompt }] }
           ]
         })
       }
     );
+
     const geminiData = await geminiRes.json();
     aiAnswer = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || aiAnswer;
     console.log("🤖 Ответ от Gemini:", aiAnswer);
 
-    console.log("🧪 Проверяем, нужно ли логировать...");
     if (isUnrecognizedResponse(aiAnswer)) {
-      console.log("📌 Ответ ИИ не распознан, логируем в unanswered_questions.json");
+      console.log("📌 Ответ не распознан — логируем.");
       logUnanswered(message, data.client_id);
-    } else {
-      console.log("✅ Ответ выглядит как валидный, логирование пропущено");
     }
 
   } catch (err) {
@@ -124,5 +140,5 @@ app.post("/", async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`✅ Сервер с ИИ подключен и слушает 🚀 (порт ${PORT})`);
+  console.log(`✅ Сервер работает на порту ${PORT}`);
 });

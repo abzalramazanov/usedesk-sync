@@ -16,7 +16,7 @@ const USEDESK_USER_ID = process.env.USEDESK_USER_ID;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const CLIENT_ID_LIMITED = "175888649";
 
-const systemPrompt = \`
+const systemPrompt = `
 Ты — агент клиентской поддержки сервиса Payda ЭДО. Отвечай лаконично, вежливо и по делу. Используй разговорный, но профессиональный стиль. Основывайся на следующих вопросах и ответах:
 
 1. Сколько стоят услуги? — Услуги стоят 500 тг в месяц.

@@ -5,10 +5,15 @@ export function isUnrecognizedResponse(text) {
   const lowered = text.toLowerCase();
   return (
     lowered.includes("не нашёл ответа") ||
+    lowered.includes("не знаю") ||
     lowered.includes("не понимаю") ||
-    lowered.includes("не уверен") ||
-    lowered.includes("обратитесь к оператору") ||
-    lowered.includes("выходит за рамки") ||
+    lowered.includes("не могу помочь") ||
+    lowered.includes("обратитесь") ||
+    lowered.includes("оператор") ||
+    lowered.includes("не входит в мои функции") ||
+    lowered.includes("это выходит за рамки") ||
+    lowered.includes("информации нет") ||
+    lowered.includes("не обладаю") ||
     text.trim().length < 10
   );
 }

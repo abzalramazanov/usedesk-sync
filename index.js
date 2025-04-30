@@ -3,8 +3,8 @@ import express from "express";
 import fetch from "node-fetch";
 import bodyParser from "body-parser";
 import dotenv from "dotenv";
-import faqList from "./faq.js";
 import Fuse from "fuse.js";
+import faqList from "./faq.js";
 
 dotenv.config();
 
@@ -15,69 +15,69 @@ const PORT = process.env.PORT || 10000;
 const USEDESK_API_TOKEN = process.env.USEDESK_API_TOKEN;
 const USEDESK_USER_ID = process.env.USEDESK_USER_ID;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const TEST_CLIENT_ID = "175888649"; // Только этот клиент получает ответы
+const TEST_CLIENT_ID = "175888649"; // Меняй при необходимости
+
+// Настройка поиска по локальной базе
+const fuse = new Fuse(faqList, {
+  keys: ["question"],
+  threshold: 0.4,
+});
 
 console.log("\n\u{1F9EA} Переменные окружения:");
 console.log("USEDESK_API_TOKEN:", USEDESK_API_TOKEN ? "✅" : "❌ NOT SET");
 console.log("USEDESK_USER_ID:", USEDESK_USER_ID ? "✅" : "❌ NOT SET");
 console.log("GEMINI_API_KEY:", GEMINI_API_KEY ? "✅" : "❌ NOT SET");
 
-// Настраиваем Fuse.js
-const fuse = new Fuse(faqList, {
-  keys: ["question", "aliases"],
-  threshold: 0.4,
-  ignoreLocation: true,
-  includeScore: true
-});
-
 app.post("/", async (req, res) => {
   const data = req.body;
+  const { chat_id, client_id, text: message } = data;
 
-  if (!data || !data.text || data.from !== "client" || `${data.client_id}` !== TEST_CLIENT_ID) {
-    console.log("\u26A0\uFE0F Пропущено: не сообщение от клиента или не наш client_id");
+  if (!message || data.from !== "client" || client_id != TEST_CLIENT_ID) {
+    console.log("⏭ Пропуск: не сообщение от клиента или не тестовый client_id");
     return res.sendStatus(200);
   }
 
-  const chat_id = data.chat_id;
-  const message = data.text;
-  const client_id = data.client_id;
-
   console.log("\u{1F680} Получено сообщение:", message);
 
-  // Ищем в локальной базе
-  const result = fuse.search(message.toLowerCase());
-  let answer = result?.[0]?.item?.answer || null;
-
-  if (answer) {
+  // 1. Поиск в FAQ
+  const faqMatch = fuse.search(message.toLowerCase());
+  if (faqMatch.length > 0) {
+    const answer = faqMatch[0].item.answer;
     console.log("\u{1F4DA} Ответ найден в FAQ:", answer);
-  } else {
-    // Иначе спрашиваем у Gemini
-    const prompt = `Ты чат-бот службы поддержки. Отвечай кратко, вежливо и по делу. Если не знаешь — предложи обратиться к оператору.\n\nКлиент: ${message}`;
-    answer = "Извините, я не понимаю ваш запрос.  Для уточнения, пожалуйста, обратитесь к оператору.";
-
-    try {
-      const geminiRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [
-              { role: "user", parts: [{ text: prompt }] }
-            ]
-          })
-        }
-      );
-
-      const geminiData = await geminiRes.json();
-      answer = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || answer;
-      console.log("\u2705 Ответ от Gemini:", answer);
-    } catch (error) {
-      console.error("\u274C Ошибка запроса к Gemini:", error);
-    }
+    await sendUsedeskMessage(chat_id, answer);
+    return res.sendStatus(200);
   }
 
-  // Отправляем ответ клиенту
+  // 2. Gemini AI
+  const prompt = `Ты сотрудник поддержки Payda ЭДО. Отвечай ясно, с примерами. Если вопрос про переход от другого провайдера, расскажи пошагово.`;
+  let aiAnswer = "Извините, я не понял вопрос. Пожалуйста, обратитесь к оператору.";
+
+  try {
+    const geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            { role: "user", parts: [{ text: `${prompt}\n\nКлиент: ${message}` }] },
+          ],
+        }),
+      }
+    );
+
+    const geminiData = await geminiRes.json();
+    aiAnswer = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || aiAnswer;
+    console.log("\u2705 Ответ от Gemini отправлен в чат:", aiAnswer);
+  } catch (error) {
+    console.error("\u274C Ошибка Gemini:", error);
+  }
+
+  await sendUsedeskMessage(chat_id, aiAnswer);
+  res.sendStatus(200);
+});
+
+async function sendUsedeskMessage(chat_id, text) {
   try {
     const response = await fetch("https://api.usedesk.ru/chat/sendMessage", {
       method: "POST",
@@ -86,18 +86,15 @@ app.post("/", async (req, res) => {
         api_token: USEDESK_API_TOKEN,
         chat_id,
         user_id: USEDESK_USER_ID,
-        text: answer
-      })
+        text,
+      }),
     });
-
     const result = await response.json();
     console.log("\u2705 Ответ отправлен клиенту:", result);
   } catch (error) {
-    console.error("\u274C Ошибка отправки в Usedesk:", error);
+    console.error("\u274C Ошибка отправки Usedesk:", error);
   }
-
-  res.sendStatus(200);
-});
+}
 
 app.listen(PORT, () => {
   console.log(`✅ Сервер с ИИ подключен и слушает 🚀 (порт ${PORT})`);

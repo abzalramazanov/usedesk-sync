@@ -1,9 +1,9 @@
-
 import express from "express";
 import fetch from "node-fetch";
 import bodyParser from "body-parser";
 import dotenv from "dotenv";
 import { logUnanswered, isUnrecognizedResponse } from "./log_unanswered.js";
+import { faq } from "./faq.js";
 dotenv.config();
 
 const app = express();
@@ -19,6 +19,8 @@ console.log("\n🧪 Переменные окружения:");
 console.log("USEDESK_API_TOKEN:", USEDESK_API_TOKEN ? "✅" : "❌ NOT SET");
 console.log("USEDESK_USER_ID:", USEDESK_USER_ID ? "✅" : "❌ NOT SET");
 console.log("GEMINI_API_KEY:", GEMINI_API_KEY ? "✅" : "❌ NOT SET");
+
+console.log("📚 Загружено FAQ:", faq.length, "вопросов");
 
 const systemPrompt = `Ты — агент клиентской поддержки сервиса Payda ЭДО. Отвечай лаконично, вежливо и по делу. Используй разговорный, но профессиональный стиль. Основывайся на следующих вопросах и ответах:
 
@@ -55,34 +57,43 @@ const systemPrompt = `Ты — агент клиентской поддержк�
 31. Как перевыпустить ЭЦП? — Удалите старую ЭЦП в eGov Mobile (Профиль → Мои ЭЦП). Затем нажмите «Зарегистрироваться – Выпустить новые», введите ИИН и номер телефона, пройдите видео-проверку и придумайте пароль.
 `;
 
+function buildExtendedPrompt(faq, userMessage) {
+  let block = "📦 Дополнительная база вопросов и ответов:\n";
+  faq.forEach((item, i) => {
+    block += \`Q: \${item.question}\nA: \${item.answer}\n\n\`;
+    if (item.aliases && item.aliases.length > 0) {
+      item.aliases.forEach(alias => {
+        block += \`Q: \${alias}\nA: \${item.answer}\n\n\`;
+      });
+    }
+  });
+  block += \`Если и среди этих вопросов нет ответа — отправь к оператору.\n\nВопрос клиента: "\${userMessage}"\nОтвет:\`;
+  return block;
+}
+
 app.post("/", async (req, res) => {
   const data = req.body;
-
-  if (!data || !data.text || data.from !== "client") {
-    console.log("⚠️ Пропущено: не сообщение от клиента");
-    return res.sendStatus(200);
-  }
-
-  if (data.client_id != CLIENT_ID_LIMITED) {
-    console.log("⛔ Сообщение не от разрешённого клиента. Пропускаем.");
-    return res.sendStatus(200);
-  }
+  if (!data || !data.text || data.from !== "client") return res.sendStatus(200);
+  if (data.client_id != CLIENT_ID_LIMITED) return res.sendStatus(200);
 
   const chat_id = data.chat_id;
   const message = data.text;
   console.log("🚀 Получено сообщение:", message);
 
+  const fullPrompt = \`\${systemPrompt}\n\n\${buildExtendedPrompt(faq, message)}\`;
+  console.log("📤 fullPrompt →", fullPrompt.slice(0, 300), "...");
+
   let aiAnswer = "Извините, не смог придумать ответ 😅";
 
   try {
     const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      \`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=\${GEMINI_API_KEY}\`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [
-            { role: "user", parts: [{ text: `${systemPrompt}\n\nКлиент: ${message}` }] }
+            { role: "user", parts: [{ text: fullPrompt }] }
           ]
         })
       }
@@ -121,5 +132,5 @@ app.post("/", async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`✅ Сервер с ИИ подключен и слушает 🚀 (порт ${PORT})`);
+  console.log(\`✅ Сервер с ИИ подключен и слушает 🚀 (порт \${PORT})\`);
 });

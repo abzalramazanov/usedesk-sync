@@ -1,5 +1,7 @@
-// log_unanswered.js
+
 import fs from "fs";
+
+const path = "/tmp/unanswered_questions.json"; // путь для Render
 
 export function isUnrecognizedResponse(text) {
   const lowered = text.toLowerCase();
@@ -10,8 +12,7 @@ export function isUnrecognizedResponse(text) {
     lowered.includes("не могу помочь") ||
     lowered.includes("обратитесь") ||
     lowered.includes("оператор") ||
-    lowered.includes("не входит в мои функции") ||
-    lowered.includes("это выходит за рамки") ||
+    lowered.includes("выходит за рамки") ||
     lowered.includes("информации нет") ||
     lowered.includes("не обладаю") ||
     text.trim().length < 10
@@ -19,11 +20,10 @@ export function isUnrecognizedResponse(text) {
 }
 
 export function logUnanswered(question, clientId = null) {
-  const path = "./unanswered_questions.json";
   const entry = {
     question,
     clientId,
-    timestamp: new Date().toISOString(),
+    timestamp: new Date().toISOString()
   };
 
   let log = [];
@@ -31,10 +31,11 @@ export function logUnanswered(question, clientId = null) {
     try {
       log = JSON.parse(fs.readFileSync(path, "utf8"));
     } catch (e) {
-      console.error("Ошибка чтения unanswered_questions.json:", e.message);
+      console.error("❌ Ошибка чтения файла:", e.message);
     }
   }
 
   log.push(entry);
   fs.writeFileSync(path, JSON.stringify(log, null, 2));
+  console.log("📝 Записано в лог-файл:", path);
 }

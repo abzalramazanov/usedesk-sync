@@ -37,11 +37,12 @@ app.post("/", async (req, res) => {
 
   console.log("🚀 Получено сообщение:", message);
 
-  const faqAnswer = findAnswer(message);
-  if (!faqAnswer) {
-    console.log("🤷 Нет подходящего ответа, ничего не отправляем");
-    return res.sendStatus(200);
-  }
+const faqAnswer = findAnswer(message);
+if (!faqAnswer) {
+  // обработка случая, когда ответ не найден
+} else {
+  // отправка найденного ответа
+}
 
   console.log("📚 Ответ найден в FAQ:", faqAnswer);
 

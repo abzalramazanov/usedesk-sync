@@ -1,5 +1,3 @@
-// faq.js — локальная база + мягкий поиск
-
 import Fuse from "fuse.js";
 
 const faqList = [
@@ -12,11 +10,20 @@ const faqList = [
 
 const fuse = new Fuse(faqList, {
   keys: ["question"],
-  threshold: 0.45, // регулируй мягкость
-  includeScore: true,
+  threshold: 0.3,
+  includeScore: true
 });
 
-export function searchFaq(message) {
-  const result = fuse.search(message.toLowerCase());
-  return result?.[0]?.item?.answer || null;
+export function findAnswer(message) {
+  if (!message || message.trim().length < 5) return null; // игнорируем слишком короткие
+
+  const results = fuse.search(message.toLowerCase());
+
+  if (results.length === 0) return null;
+
+  const [best] = results;
+
+  if (best.score > 0.25) return null; // слабое совпадение — игнорим
+
+  return best.item.answer;
 }

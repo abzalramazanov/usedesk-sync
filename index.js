@@ -60,10 +60,10 @@ async function updateTicketStatus(ticketId, status, clientName) {
       body: JSON.stringify({
         api_token: USEDESK_API_TOKEN,
         ticket_id: ticketId,
-        status: String(status) // <== тут ключ 'status', не 'status_id'
+        status: String(status)
       })
     });
-    const result = await response.json();
+    await response.json();
     console.log(`🎯 Клиент: ${clientName} | Статус тикета #${ticketId} → ${status}`);
   } catch (err) {
     console.error("❌ Ошибка обновления статуса тикета:", err);
@@ -71,21 +71,53 @@ async function updateTicketStatus(ticketId, status, clientName) {
 }
 
 function isAskingClarification(answer) {
-  const clarifiers = [ "уточните",  "что именно", "можете уточнить", "не совсем понял", "уточните, пожалуйста", "могли бы пояснить", "не могли бы уточнить", "что именно вас интересует", "могли бы подробнее", "не совсем ясно", "напишите подробнее", "чем могу помочь?"];
+  const clarifiers = [
+    "уточните",
+    "что именно",
+    "можете уточнить",
+    "не совсем понял",
+    "уточните, пожалуйста",
+    "могли бы пояснить",
+    "чем могу помочь",
+    "как могу помочь",
+    "что вас интересует",
+    "опишите подробнее",
+    "напишите подробнее",
+    "расскажите подробнее"
+  ];
   return clarifiers.some(word => answer.toLowerCase().includes(word));
+}
+
+async function createNewTicketAndReply(message, aiAnswer, clientId, clientName) {
+  try {
+    const res = await fetch("https://api.usedesk.ru/create/ticket", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        api_token: USEDESK_API_TOKEN,
+        client_id: clientId,
+        subject: "Новый тикет по обращению",
+        message: aiAnswer,
+        user_id: USEDESK_USER_ID
+      })
+    });
+    const result = await res.json();
+    console.log(`📩 Новый тикет создан для клиента ${clientName}: #${result.ticket_id}`);
+  } catch (err) {
+    console.error("❌ Ошибка создания нового тикета:", err);
+  }
 }
 
 app.post("/", async (req, res) => {
   const data = req.body;
   if (!data || !data.text || data.from !== "client") return res.sendStatus(200);
   if (data.client_id != CLIENT_ID_LIMITED) return res.sendStatus(200);
-  if (data.ticket?.assignee_id !== null || data.ticket?.group !== null) {
-    return res.sendStatus(200);
-  }
 
   const chat_id = data.chat_id;
   const message = data.text;
   const ticket_id = data.ticket?.id;
+  const ticket_status = data.ticket?.status_id;
+  const client_id = data.client?.id;
   const client_name = data.client?.name || "Неизвестно";
   console.log("🚀 Получено сообщение:", message);
 
@@ -132,6 +164,12 @@ app.post("/", async (req, res) => {
     }
   } catch (err) {
     console.error("❌ Ошибка Gemini:", err);
+  }
+
+  if (ticket_status === 3) {
+    console.log(`⚠️ Тикет #${ticket_id} уже завершён. Создаём новый.`);
+    await createNewTicketAndReply(message, aiAnswer, client_id, client_name);
+    return res.sendStatus(200);
   }
 
   try {

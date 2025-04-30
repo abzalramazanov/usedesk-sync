@@ -16,8 +16,6 @@ const USEDESK_USER_ID = process.env.USEDESK_USER_ID;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const CLIENT_ID_LIMITED = "175888649";
 
-const recentGreetings = {}; // key: ticket_id, value: timestamp
-
 console.log("\n🧪 Переменные окружения:");
 console.log("USEDESK_API_TOKEN:", USEDESK_API_TOKEN ? "✅" : "❌ NOT SET");
 console.log("USEDESK_USER_ID:", USEDESK_USER_ID ? "✅" : "❌ NOT SET");
@@ -149,15 +147,6 @@ app.post("/", async (req, res) => {
 
     const geminiData = await geminiRes.json();
     aiAnswer = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || aiAnswer;
-
-    const now = Date.now();
-    if (aiAnswer.toLowerCase().startsWith("здравствуйте")) {
-      if (recentGreetings[ticket_id] && now - recentGreetings[ticket_id] < 86400000) {
-        aiAnswer = aiAnswer.replace(/^здравствуйте[!,\.\s]*/i, "").trimStart();
-      } else {
-        recentGreetings[ticket_id] = now;
-      }
-    }
 
     console.log("🤖 Ответ от Gemini:", aiAnswer);
 

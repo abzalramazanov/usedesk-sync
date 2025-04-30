@@ -34,8 +34,7 @@ const systemPrompt = `Ты — агент клиентской поддержк�
 9. Как оплатить? — Через Kaspi, кнопка появляется на сайте.
 10. Кто видит мои документы? — Только вы и ваш провайдер.
 
-Если ответа нет — попробуй найти его в дополнительной базе ниже. Если и там ничего — предложи обратиться к оператору.
-`;
+Если ответа нет — попробуй найти его в дополнительной базе ниже. Если и там ничего — предложи обратиться к оператору.`;
 
 function buildExtendedPrompt(faq, userMessage) {
   let block = "📦 Дополнительная база вопросов и ответов:\n";
@@ -57,8 +56,6 @@ app.post("/", async (req, res) => {
   const data = req.body;
   if (!data || !data.text || data.from !== "client") return res.sendStatus(200);
   if (data.client_id != CLIENT_ID_LIMITED) return res.sendStatus(200);
-
-  // ✅ Только если нет исполнителя и группы
   if (data.ticket?.assignee_id !== null || data.ticket?.group !== null) {
     console.log("⛔ Пропущено: у тикета уже есть исполнитель или группа");
     return res.sendStatus(200);
@@ -92,6 +89,23 @@ app.post("/", async (req, res) => {
 
     if (isUnrecognizedResponse(aiAnswer)) {
       logUnanswered(message, data.client_id);
+      aiAnswer = "К этому вопросу подключится наш менеджер, пожалуйста, ожидайте 🙌";
+
+      try {
+        const assignRes = await fetch("https://api.usedesk.ru/chat/changeAssignee", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            api_token: USEDESK_API_TOKEN,
+            chat_id: chat_id,
+            user_id: 293758
+          })
+        });
+        const assignData = await assignRes.json();
+        console.log("🔄 Назначен менеджер на чат:", assignData);
+      } catch (err) {
+        console.error("❌ Ошибка назначения менеджера:", err);
+      }
     }
 
   } catch (err) {

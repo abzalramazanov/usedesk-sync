@@ -15,7 +15,7 @@ const USEDESK_USER_ID = process.env.USEDESK_USER_ID;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const CLIENT_ID_LIMITED = "175888649";
 
-const systemPrompt = \`
+const systemPrompt = `
 Ты — агент клиентской поддержки сервиса Payda ЭДО. Отвечай лаконично, вежливо и по делу. Используй разговорный, но профессиональный стиль. Основывайся на следующих вопросах и ответах:
 
 1. Сколько стоят услуги? — Услуги стоят 500 тг в месяц.
@@ -50,7 +50,7 @@ const systemPrompt = \`
 30. Кто видит мои документы? — Только вы и ваш провайдер.
 
 Если не знаешь ответа — честно скажи клиенту и предложи обратиться к оператору.
-\`;
+`;
 
 app.post("/", async (req, res) => {
   const data = req.body;
@@ -65,13 +65,15 @@ app.post("/", async (req, res) => {
 
   try {
     const geminiRes = await fetch(
-      \`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=\${GEMINI_API_KEY}\`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=\${GEMINI_API_KEY}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [
-            { role: "user", parts: [{ text: systemPrompt + "\n\nКлиент: " + message }] }
+            { role: "user", parts: [{ text: systemPrompt + "
+
+Клиент: " + message }] }
           ]
         })
       }
@@ -112,5 +114,5 @@ app.post("/", async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(\`✅ Сервер работает на порту \${PORT}\`);
+  console.log(`✅ Сервер работает на порту \${PORT}`);
 });

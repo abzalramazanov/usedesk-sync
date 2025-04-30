@@ -4,6 +4,7 @@ import bodyParser from "body-parser";
 import dotenv from "dotenv";
 import { logUnanswered, isUnrecognizedResponse } from "./log_unanswered.js";
 import { faq } from "./faq.js";
+
 dotenv.config();
 
 const app = express();
@@ -41,22 +42,32 @@ const systemPrompt = `Ты — агент клиентской поддержк�
 function buildExtendedPrompt(faq, userMessage) {
   let block = "📦 Дополнительная база вопросов и ответов:\n";
   if (Array.isArray(faq)) {
-    faq.forEach((item, i) => {
-      block += "Q: " + item.question + "\nA: " + item.answer + "\n\n";
-      if (item.aliases && item.aliases.length > 0) {
+    faq.forEach(item => {
+      block += `Q: ${item.question}\nA: ${item.answer}\n\n`;
+      if (Array.isArray(item.aliases)) {
         item.aliases.forEach(alias => {
-          block += "Q: " + alias + "\nA: " + item.answer + "\n\n";
+          block += `Q: ${alias}\nA: ${item.answer}\n\n`;
         });
       }
     });
   }
-  block += "Если и среди этих вопросов нет ответа — отправь к оператору.\n\nВопрос клиента: \"" + userMessage + "\"\nОтвет:";
+  block += `Если и среди этих вопросов нет ответа — отправь к оператору.\n\nВопрос клиента: \"${userMessage}\"\nОтвет:`;
   return block;
+}
+
+function isAskingClarification(answer) {
+  const clarifiers = [
+    "уточните", "что именно", "можете уточнить", "не совсем понял",
+    "уточните, пожалуйста", "могли бы пояснить", "чем могу помочь",
+    "как могу помочь", "что вас интересует", "опишите подробнее",
+    "напишите подробнее", "расскажите подробнее"
+  ];
+  return clarifiers.some(word => answer.toLowerCase().includes(word));
 }
 
 async function updateTicketStatus(ticketId, status, clientName) {
   try {
-    const response = await fetch("https://api.usedesk.ru/update/ticket", {
+    await fetch("https://api.usedesk.ru/update/ticket", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -65,29 +76,10 @@ async function updateTicketStatus(ticketId, status, clientName) {
         status: String(status)
       })
     });
-    await response.json();
     console.log(`🎯 Клиент: ${clientName} | Статус тикета #${ticketId} → ${status}`);
   } catch (err) {
     console.error("❌ Ошибка обновления статуса тикета:", err);
   }
-}
-
-function isAskingClarification(answer) {
-  const clarifiers = [
-    "уточните",
-    "что именно",
-    "можете уточнить",
-    "не совсем понял",
-    "уточните, пожалуйста",
-    "могли бы пояснить",
-    "чем могу помочь",
-    "как могу помочь",
-    "что вас интересует",
-    "опишите подробнее",
-    "напишите подробнее",
-    "расскажите подробнее"
-  ];
-  return clarifiers.some(word => answer.toLowerCase().includes(word));
 }
 
 async function createNewTicketAndReply(message, aiAnswer, clientId, clientName) {
@@ -112,111 +104,84 @@ async function createNewTicketAndReply(message, aiAnswer, clientId, clientName) 
 
 app.post("/", async (req, res) => {
   const data = req.body;
-  if (!data || !data.text || data.from !== "client") return res.sendStatus(200);
-  if (data.client_id != CLIENT_ID_LIMITED) return res.sendStatus(200);
-  
-const simpleGreetings = ["здравствуйте", "привет", "добрый день", "йо", "салам"];
+  if (!data?.text || data.from !== "client") return res.sendStatus(200);
+  if (data.client_id !== CLIENT_ID_LIMITED) return res.sendStatus(200);
 
-if (simpleGreetings.includes(data.text.toLowerCase().trim())) {
-  const greetReply = "Здравствуйте! Чем могу помочь?";
-  await fetch("https://api.usedesk.ru/chat/sendMessage", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      api_token: USEDESK_API_TOKEN,
-      chat_id: data.chat_id,
-      user_id: USEDESK_USER_ID,
-      text: greetReply
-    })
-  });
-  console.log("✅ Отправлено приветствие без логики ИИ");
-  return res.sendStatus(200);
-}
+  const simpleGreetings = ["здравствуйте", "привет", "добрый день", "йо", "салам"];
+  const lowerText = data.text.toLowerCase().trim();
 
-  const chat_id = data.chat_id;
-  const message = data.text;
-  const ticket_id = data.ticket?.id;
-  const ticket_status = data.ticket?.status_id;
-  const client_id = data.client?.id;
-  const client_name = data.client?.name || "Неизвестно";
+  if (simpleGreetings.includes(lowerText)) {
+    await fetch("https://api.usedesk.ru/chat/sendMessage", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        api_token: USEDESK_API_TOKEN,
+        chat_id: data.chat_id,
+        user_id: USEDESK_USER_ID,
+        text: "Здравствуйте! Чем могу помочь?"
+      })
+    });
+    console.log("✅ Отправлено приветствие без логики ИИ");
+    return res.sendStatus(200);
+  }
+
+  const { chat_id, text: message, ticket, client } = data;
+  const ticket_id = ticket?.id;
+  const ticket_status = ticket?.status_id;
+  const client_id = client?.id;
+  const client_name = client?.name || "Неизвестно";
+
   console.log("🚀 Получено сообщение:", message);
-
   const fullPrompt = systemPrompt + "\n\n" + buildExtendedPrompt(faq, message);
+
   let aiAnswer = "Извините, не смог придумать ответ 😅";
   let isUnrecognized = false;
 
   try {
     const geminiRes = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + GEMINI_API_KEY,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [
-            { role: "user", parts: [{ text: fullPrompt }] }
-          ]
-        })
+        body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: fullPrompt }] }] })
       }
     );
+
     const geminiData = await geminiRes.json();
     aiAnswer = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || aiAnswer;
 
-    // Убираем приветствие, если в этом тикете уже здоровались за последние 24 часа
-    const lastGreet = recentGreetings[ticket_id];
     const now = Date.now();
-    if (aiAnswer.toLowerCase().startsWith("здравствуйте") && lastGreet && now - lastGreet < 86400000) {
-      aiAnswer = aiAnswer.replace(/^здравствуйте[!,.\s]*/i, "").trimStart();
-    } else if (aiAnswer.toLowerCase().startsWith("здравствуйте")) {
-      recentGreetings[ticket_id] = now;
+    if (aiAnswer.toLowerCase().startsWith("здравствуйте")) {
+      if (recentGreetings[ticket_id] && now - recentGreetings[ticket_id] < 86400000) {
+        aiAnswer = aiAnswer.replace(/^здравствуйте[!,\.\s]*/i, "").trimStart();
+      } else {
+        recentGreetings[ticket_id] = now;
+      }
     }
 
     console.log("🤖 Ответ от Gemini:", aiAnswer);
 
-  // Проверка: нормальный ли ответ
-if (isUnrecognizedResponse(aiAnswer)) {
-  isUnrecognized = true;
-  logUnanswered(message, data.client_id);
-  aiAnswer = "К этому вопросу подключится наш менеджер, пожалуйста, ожидайте 🙌";
+    if (isUnrecognizedResponse(aiAnswer)) {
+      isUnrecognized = true;
+      logUnanswered(message, client_id);
+      aiAnswer = "К этому вопросу подключится наш менеджер, пожалуйста, ожидайте 🙌";
 
-  try {
-    await fetch("https://api.usedesk.ru/chat/changeAssignee", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        api_token: USEDESK_API_TOKEN,
-        chat_id: chat_id,
-        user_id: 293758
-      })
-    });
-    console.log(`🔄 Менеджер назначен клиенту: ${client_name}`);
-  } catch (err) {
-    console.error("❌ Ошибка назначения менеджера:", err);
-  }
-} else {
-  console.log("📩 Ответ подходит, не назначаем менеджера");
-}
-
-      try {
-        await fetch("https://api.usedesk.ru/chat/changeAssignee", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            api_token: USEDESK_API_TOKEN,
-            chat_id: chat_id,
-            user_id: 293758
-          })
-        });
-        console.log(`🔄 Менеджер назначен клиенту: ${client_name}`);
-      } catch (err) {
-        console.error("❌ Ошибка назначения менеджера:", err);
-      }
+      await fetch("https://api.usedesk.ru/chat/changeAssignee", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          api_token: USEDESK_API_TOKEN,
+          chat_id,
+          user_id: 293758
+        })
+      });
+      console.log(`🔄 Менеджер назначен клиенту: ${client_name}`);
     }
   } catch (err) {
     console.error("❌ Ошибка Gemini:", err);
   }
 
   if (ticket_status === 3) {
-    console.log(`⚠️ Тикет #${ticket_id} уже завершён. Создаём новый.`);
     await createNewTicketAndReply(message, aiAnswer, client_id, client_name);
     return res.sendStatus(200);
   }

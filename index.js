@@ -18,6 +18,7 @@ const USEDESK_USER_ID = process.env.USEDESK_USER_ID;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const CLIENT_ID_LIMITED = "175888649";
 const HISTORY_FILE = "./chat_history.json";
+const HISTORY_TTL_MS = 8 * 60 * 60 * 1000; // 8 часов
 
 const recentGreetings = {}; // key: ticket_id, value: timestamp
 
@@ -33,7 +34,7 @@ function buildExtendedPrompt(faq, userMessage, history = []) {
       }
     });
   }
-  const chatHistory = history.length > 0 ? `\nИстория переписки:\n${history.join("\n")}` : "";
+  const chatHistory = history.length > 0 ? `\nИстория переписки:\n${history.map(h => h.text).join("\n")}` : "";
   block += `${chatHistory}\n\nВопрос клиента: \"${userMessage}\"\nОтвет:`;
   return block;
 }
@@ -44,7 +45,11 @@ async function getChatHistory(chatId) {
     const file = await fs.readFile(HISTORY_FILE, "utf-8");
     data = JSON.parse(file);
   } catch (_) {}
-  return data[chatId] || [];
+  const now = Date.now();
+  const history = (data[chatId] || []).filter(entry => now - entry.timestamp < HISTORY_TTL_MS);
+  data[chatId] = history;
+  await fs.writeFile(HISTORY_FILE, JSON.stringify(data, null, 2));
+  return history.map(entry => entry.text);
 }
 
 async function appendToHistory(chatId, message) {
@@ -54,11 +59,12 @@ async function appendToHistory(chatId, message) {
     data = JSON.parse(file);
   } catch (_) {}
   if (!data[chatId]) data[chatId] = [];
-  data[chatId].push(message);
+  data[chatId].push({ text: message, timestamp: Date.now() });
   if (data[chatId].length > 10) {
     data[chatId] = data[chatId].slice(-10);
   }
   await fs.writeFile(HISTORY_FILE, JSON.stringify(data, null, 2));
+  console.log(`💾 История обновлена: [${chatId}] → ${message}`);
 }
 
 app.post("/", async (req, res) => {
@@ -124,7 +130,7 @@ app.post("/", async (req, res) => {
   }
 
   if (ticket_status === 3) {
-    return res.sendStatus(200); // не создаём новый тикет, если тикет завершён
+    return res.sendStatus(200);
   }
 
   try {

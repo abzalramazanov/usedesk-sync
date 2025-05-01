@@ -1,9 +1,9 @@
-// index_with_history.js
 import express from "express";
 import fetch from "node-fetch";
 import bodyParser from "body-parser";
 import dotenv from "dotenv";
-import fs from "fs/promises";
+import fs from "fs";
+import fsp from "fs/promises";
 import { logUnanswered, isUnrecognizedResponse } from "./log_unanswered.js";
 import { faq } from "./faq.js";
 
@@ -17,8 +17,14 @@ const USEDESK_API_TOKEN = process.env.USEDESK_API_TOKEN;
 const USEDESK_USER_ID = process.env.USEDESK_USER_ID;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const CLIENT_ID_LIMITED = "175888649";
-const HISTORY_FILE = "./chat_history.json";
+
+const HISTORY_FILE = "/mnt/data/chat_history.json";
 const HISTORY_TTL_MS = 8 * 60 * 60 * 1000; // 8 часов
+
+if (!fs.existsSync(HISTORY_FILE)) {
+  fs.writeFileSync(HISTORY_FILE, "{}");
+  console.log("📁 Новый файл истории создан на диске Render (/mnt/data)");
+}
 
 const recentGreetings = {}; // key: ticket_id, value: timestamp
 
@@ -35,27 +41,27 @@ function buildExtendedPrompt(faq, userMessage, history = []) {
     });
   }
   const chatHistory = history.length > 0 ? `\nИстория переписки:\n${history.map(h => h.text).join("\n")}` : "";
-  block += `${chatHistory}\n\nВопрос клиента: \"${userMessage}\"\nОтвет:`;
+  block += `${chatHistory}\n\nВопрос клиента: "${userMessage}"\nОтвет:`;
   return block;
 }
 
 async function getChatHistory(chatId) {
   let data = {};
   try {
-    const file = await fs.readFile(HISTORY_FILE, "utf-8");
+    const file = await fsp.readFile(HISTORY_FILE, "utf-8");
     data = JSON.parse(file);
   } catch (_) {}
   const now = Date.now();
   const history = (data[chatId] || []).filter(entry => now - entry.timestamp < HISTORY_TTL_MS);
   data[chatId] = history;
-  await fs.writeFile(HISTORY_FILE, JSON.stringify(data, null, 2));
+  await fsp.writeFile(HISTORY_FILE, JSON.stringify(data, null, 2));
   return history.map(entry => entry.text);
 }
 
 async function appendToHistory(chatId, message) {
   let data = {};
   try {
-    const file = await fs.readFile(HISTORY_FILE, "utf-8");
+    const file = await fsp.readFile(HISTORY_FILE, "utf-8");
     data = JSON.parse(file);
   } catch (_) {}
   if (!data[chatId]) data[chatId] = [];
@@ -63,7 +69,7 @@ async function appendToHistory(chatId, message) {
   if (data[chatId].length > 10) {
     data[chatId] = data[chatId].slice(-10);
   }
-  await fs.writeFile(HISTORY_FILE, JSON.stringify(data, null, 2));
+  await fsp.writeFile(HISTORY_FILE, JSON.stringify(data, null, 2));
   console.log(`💾 История обновлена: [${chatId}] → ${message}`);
 }
 
@@ -95,7 +101,9 @@ app.post("/", async (req, res) => {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: fullPrompt }] }] })
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: fullPrompt }] }]
+        })
       }
     );
     const geminiData = await geminiRes.json();
@@ -104,7 +112,7 @@ app.post("/", async (req, res) => {
     const lastGreet = recentGreetings[ticket_id];
     const now = Date.now();
     if (aiAnswer.toLowerCase().startsWith("здравствуйте") && lastGreet && now - lastGreet < 86400000) {
-      aiAnswer = aiAnswer.replace(/^здравствуйте[!,.\s]*/i, "").trimStart();
+      aiAnswer = aiAnswer.replace(/^здравствуйте[!,.\\s]*/i, "").trimStart();
     } else if (aiAnswer.toLowerCase().startsWith("здравствуйте")) {
       recentGreetings[ticket_id] = now;
     }
@@ -115,12 +123,13 @@ app.post("/", async (req, res) => {
       isUnrecognized = true;
       logUnanswered(message, data.client_id);
       aiAnswer = "К этому вопросу подключится наш менеджер, пожалуйста, ожидайте 🙌";
+
       await fetch("https://api.usedesk.ru/chat/changeAssignee", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           api_token: USEDESK_API_TOKEN,
-          chat_id: chat_id,
+          chat_id,
           user_id: USEDESK_USER_ID
         })
       });
@@ -154,5 +163,5 @@ app.post("/", async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`✅ Сервер с ИИ и историей подключен 🚀 (порт ${PORT})`);
+  console.log(`✅ Сервер с ИИ и Render-диском подключен 🚀 (порт ${PORT})`);
 });

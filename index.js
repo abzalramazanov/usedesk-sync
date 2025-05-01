@@ -1,103 +1,152 @@
+// index_with_history.js
 import express from "express";
+import fetch from "node-fetch";
 import bodyParser from "body-parser";
 import dotenv from "dotenv";
 import fs from "fs/promises";
-import fetch from "node-fetch";
+import { logUnanswered, isUnrecognizedResponse } from "./log_unanswered.js";
+import { faq } from "./faq.js";
 
 dotenv.config();
+
 const app = express();
 app.use(bodyParser.json());
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
+const USEDESK_API_TOKEN = process.env.USEDESK_API_TOKEN;
+const USEDESK_USER_ID = process.env.USEDESK_USER_ID;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const CLIENT_ID_LIMITED = "175888649";
 const HISTORY_FILE = "./chat_history.json";
 
-// 📥 Сохраняем переписку по chat_id
-async function appendMessage(chatId, message) {
+const recentGreetings = {}; // key: ticket_id, value: timestamp
+
+function buildExtendedPrompt(faq, userMessage, history = []) {
+  let block = "📦 Дополнительная база вопросов и ответов:\n";
+  if (Array.isArray(faq)) {
+    faq.forEach((item) => {
+      block += "Q: " + item.question + "\nA: " + item.answer + "\n\n";
+      if (item.aliases && item.aliases.length > 0) {
+        item.aliases.forEach((alias) => {
+          block += "Q: " + alias + "\nA: " + item.answer + "\n\n";
+        });
+      }
+    });
+  }
+  const chatHistory = history.length > 0 ? `\nИстория переписки:\n${history.join("\n")}` : "";
+  block += `${chatHistory}\n\nВопрос клиента: \"${userMessage}\"\nОтвет:`;
+  return block;
+}
+
+async function getChatHistory(chatId) {
   let data = {};
   try {
     const file = await fs.readFile(HISTORY_FILE, "utf-8");
     data = JSON.parse(file);
   } catch (_) {}
+  return data[chatId] || [];
+}
 
+async function appendToHistory(chatId, message) {
+  let data = {};
+  try {
+    const file = await fs.readFile(HISTORY_FILE, "utf-8");
+    data = JSON.parse(file);
+  } catch (_) {}
   if (!data[chatId]) data[chatId] = [];
   data[chatId].push(message);
   if (data[chatId].length > 10) {
-    data[chatId] = data[chatId].slice(-10); // храним последние 10
+    data[chatId] = data[chatId].slice(-10);
   }
-
   await fs.writeFile(HISTORY_FILE, JSON.stringify(data, null, 2));
 }
 
-async function getLastMessages(chatId) {
-  try {
-    const file = await fs.readFile(HISTORY_FILE, "utf-8");
-    const data = JSON.parse(file);
-    return data[chatId] || [];
-  } catch (_) {
-    return [];
-  }
-}
-
-// 🧠 Генерация ответа от Gemini
-async function generateAnswer(prompt) {
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${process.env.GEMINI_API_KEY}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }]
-    }),
-  });
-
-  const json = await res.json();
-  const reply = json?.candidates?.[0]?.content?.parts?.[0]?.text;
-  return reply || "Извините, сейчас не могу ответить.";
-}
-
-// 📤 Отправка сообщения в UseDesk (по chat_id и user_id!)
-async function sendToUseDesk(chatId, message) {
-  const result = await fetch("https://api.usedesk.ru/chat/sendMessage", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      api_token: process.env.USEDESK_API_KEY,
-      chat_id: chatId,
-      user_id: parseInt(process.env.USEDESK_AGENT_ID), // обязательно!
-      message: message
-    })
-  });
-
-  const json = await result.json();
-  console.log("📤 Ответ от UseDesk:", json);
-  if (json.error) {
-    console.error("❌ Ошибка отправки:", json.error);
-  }
-}
-
-// 🚀 Основной вебхук
 app.post("/", async (req, res) => {
-  const body = req.body;
-  console.log("📨 Вебхук UseDesk:", JSON.stringify(body, null, 2));
+  const data = req.body;
+  if (!data || !data.text || data.from !== "client") return res.sendStatus(200);
+  if (data.client_id != CLIENT_ID_LIMITED) return res.sendStatus(200);
 
-  const chatId = body.chat_id;
-  const text = body.text;
-  const ticketId = body.ticket?.id;
-  const author = body.from === "client" ? "Клиент" : "Агент";
+  const chat_id = data.chat_id;
+  const message = data.text;
+  const ticket_id = data.ticket?.id;
+  const ticket_status = data.ticket?.status_id;
+  const client_id = data.client?.id;
+  const client_name = data.client?.name || "Неизвестно";
+  console.log("🚀 Получено сообщение:", message);
 
-  if (!chatId || !text || !ticketId) return res.sendStatus(400);
+  await appendToHistory(chat_id, `Клиент: ${message}`);
+  const history = await getChatHistory(chat_id);
 
-  await appendMessage(chatId, `${author}: ${text}`);
+  const systemPrompt = `Ты — агент клиентской поддержки сервиса Payda ЭДО. Отвечай лаконично, вежливо и по делу. Используй разговорный, но профессиональный стиль. Ниже — основные вопросы:`;
+  const fullPrompt = systemPrompt + "\n\n" + buildExtendedPrompt(faq, message, history);
 
-  if (body.from === "client") {
-    const context = await getLastMessages(chatId);
-    const prompt = `Ты агент поддержки Payda. Вот история диалога:\n${context.join("\n")}\n\nОтветь клиенту лаконично, вежливо и с небольшими эмоциями.`;
-    const reply = await generateAnswer(prompt);
-    console.log("🤖 Ответ ИИ отправлен:", reply);
-    await sendToUseDesk(chatId, reply);
+  let aiAnswer = "Извините, не смог придумать ответ 😅";
+  let isUnrecognized = false;
+
+  try {
+    const geminiRes = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + GEMINI_API_KEY,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: fullPrompt }] }] })
+      }
+    );
+    const geminiData = await geminiRes.json();
+    aiAnswer = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || aiAnswer;
+
+    const lastGreet = recentGreetings[ticket_id];
+    const now = Date.now();
+    if (aiAnswer.toLowerCase().startsWith("здравствуйте") && lastGreet && now - lastGreet < 86400000) {
+      aiAnswer = aiAnswer.replace(/^здравствуйте[!,.\s]*/i, "").trimStart();
+    } else if (aiAnswer.toLowerCase().startsWith("здравствуйте")) {
+      recentGreetings[ticket_id] = now;
+    }
+
+    console.log("🤖 Ответ от Gemini:", aiAnswer);
+
+    if (isUnrecognizedResponse(aiAnswer)) {
+      isUnrecognized = true;
+      logUnanswered(message, data.client_id);
+      aiAnswer = "К этому вопросу подключится наш менеджер, пожалуйста, ожидайте 🙌";
+      await fetch("https://api.usedesk.ru/chat/changeAssignee", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          api_token: USEDESK_API_TOKEN,
+          chat_id: chat_id,
+          user_id: USEDESK_USER_ID
+        })
+      });
+    }
+  } catch (err) {
+    console.error("❌ Ошибка Gemini:", err);
+  }
+
+  if (ticket_status === 3) {
+    return res.sendStatus(200); // не создаём новый тикет, если тикет завершён
+  }
+
+  try {
+    await fetch("https://api.usedesk.ru/chat/sendMessage", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        api_token: USEDESK_API_TOKEN,
+        chat_id,
+        user_id: USEDESK_USER_ID,
+        text: aiAnswer
+      })
+    });
+    await appendToHistory(chat_id, `Агент: ${aiAnswer}`);
+    console.log("✅ Ответ отправлен клиенту");
+  } catch (err) {
+    console.error("❌ Ошибка отправки в Usedesk:", err);
   }
 
   res.sendStatus(200);
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Сервер слушает порт ${PORT}`);
+  console.log(`✅ Сервер с ИИ и историей подключен 🚀 (порт ${PORT})`);
 });

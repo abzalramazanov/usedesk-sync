@@ -1,3 +1,4 @@
+// index_with_history.js
 import express from "express";
 import fetch from "node-fetch";
 import bodyParser from "body-parser";
@@ -41,7 +42,7 @@ function buildExtendedPrompt(faq, userMessage, history = []) {
     });
   }
   const chatHistory = history.length > 0 ? `\nИстория переписки:\n${history.map(h => h.text).join("\n")}` : "";
-  block += `${chatHistory}\n\nВопрос клиента: "${userMessage}"\nОтвет:`;
+  block += `${chatHistory}\n\nВопрос клиента: \"${userMessage}\"\nОтвет:`;
   return block;
 }
 
@@ -73,6 +74,42 @@ async function appendToHistory(chatId, message) {
   console.log(`💾 История обновлена: [${chatId}] → ${message}`);
 }
 
+function isAskingClarification(answer) {
+  const clarifiers = [
+    "уточните",
+    "что именно",
+    "можете уточнить",
+    "не совсем понял",
+    "уточните, пожалуйста",
+    "могли бы пояснить",
+    "чем могу помочь",
+    "как могу помочь",
+    "что вас интересует",
+    "опишите подробнее",
+    "напишите подробнее",
+    "расскажите подробнее"
+  ];
+  return clarifiers.some(word => answer.toLowerCase().includes(word));
+}
+
+async function updateTicketStatus(ticketId, status, clientName) {
+  try {
+    const response = await fetch("https://api.usedesk.ru/update/ticket", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        api_token: USEDESK_API_TOKEN,
+        ticket_id: ticketId,
+        status: String(status)
+      })
+    });
+    await response.json();
+    console.log(`🎯 Клиент: ${clientName} | Статус тикета #${ticketId} → ${status}`);
+  } catch (err) {
+    console.error("❌ Ошибка обновления статуса тикета:", err);
+  }
+}
+
 app.post("/", async (req, res) => {
   const data = req.body;
   if (!data || !data.text || data.from !== "client") return res.sendStatus(200);
@@ -101,9 +138,7 @@ app.post("/", async (req, res) => {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: fullPrompt }] }]
-        })
+        body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: fullPrompt }] }] })
       }
     );
     const geminiData = await geminiRes.json();
@@ -112,7 +147,7 @@ app.post("/", async (req, res) => {
     const lastGreet = recentGreetings[ticket_id];
     const now = Date.now();
     if (aiAnswer.toLowerCase().startsWith("здравствуйте") && lastGreet && now - lastGreet < 86400000) {
-      aiAnswer = aiAnswer.replace(/^здравствуйте[!,.\\s]*/i, "").trimStart();
+      aiAnswer = aiAnswer.replace(/^здравствуйте[!,.\s]*/i, "").trimStart();
     } else if (aiAnswer.toLowerCase().startsWith("здравствуйте")) {
       recentGreetings[ticket_id] = now;
     }
@@ -157,6 +192,11 @@ app.post("/", async (req, res) => {
     console.log("✅ Ответ отправлен клиенту");
   } catch (err) {
     console.error("❌ Ошибка отправки в Usedesk:", err);
+  }
+
+  if (ticket_id && !isUnrecognized) {
+    const status = isAskingClarification(aiAnswer) ? 6 : 2;
+    await updateTicketStatus(ticket_id, status, client_name);
   }
 
   res.sendStatus(200);

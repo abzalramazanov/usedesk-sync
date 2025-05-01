@@ -66,7 +66,7 @@ async function sendToUseDesk(ticketId, message) {
 }
 
 // --------- ОБРАБОТКА ВХОДЯЩЕГО СООБЩЕНИЯ ---------
-app.post("/incoming", async (req, res) => {
+app.post("/", async (req, res) => {
   const body = req.body;
 
   const chatId = body.chat_id;

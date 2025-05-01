@@ -53,16 +53,20 @@ async function generateAnswer(prompt) {
 }
 
 // 4. Отправляем ответ в UseDesk
-async function sendToUseDesk(ticketId, message) {
-  await fetch("https://api.usedesk.ru/chat/sendMessage", {
+async function sendToUseDesk(chatId, message) {
+  const result = await fetch("https://api.usedesk.ru/chat/sendMessage", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       api_token: process.env.USEDESK_API_KEY,
-      ticket_id: ticketId,
+      chat_id: chatId,
+      user_id: parseInt(process.env.USEDESK_AGENT_ID), // ⚠️ добавь в .env
       message: message
     })
   });
+
+  const json = await result.json();
+  console.log("📤 Ответ от UseDesk:", json);
 }
 
 // 5. Обработка входящего сообщения

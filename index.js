@@ -72,6 +72,11 @@ async function appendToHistory(chatId, message) {
   console.log(`💾 История обновлена: [${chatId}] → ${message}`);
 }
 
+
+function isAskingClarification(answer) {
+  return answer.includes("?") && !answer.toLowerCase().includes("хорошо") && !answer.toLowerCase().includes("понял");
+}
+
 app.post("/", async (req, res) => {
   const data = req.body;
   console.log("🔥 Входящий запрос:", JSON.stringify(data, null, 2));
@@ -124,6 +129,26 @@ app.post("/", async (req, res) => {
   }
 
   await appendToHistory(chat_id, `Агент: ${aiAnswer}`);
+  // Меняем статус тикета
+  if (ticket_id) {
+    const status = isAskingClarification(aiAnswer) ? 6 : 2;
+    try {
+      const response = await fetch("https://api.usedesk.ru/update/ticket", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          api_token: USEDESK_API_TOKEN,
+          ticket_id,
+          status: String(status)
+        })
+      });
+      const result = await response.json();
+      console.log(`📌 Статус тикета #${ticket_id} обновлён → ${status}`);
+    } catch (err) {
+      console.error("❌ Ошибка смены статуса тикета:", err);
+    }
+  }
+
   res.sendStatus(200);
 });
 

@@ -81,6 +81,11 @@ app.post("/", async (req, res) => {
   const data = req.body;
   console.log("🔥 Входящий запрос:", JSON.stringify(data, null, 2));
 
+  if (data.ticket?.assignee_id !== null) {
+    console.log(`⚠️ Пропущено: тикет уже назначен на user_id ${data.ticket.assignee_id}`);
+    return res.sendStatus(200);
+  }
+
   if (!data || data.from !== "client") {
     console.log("⚠️ Пропущено: нет данных или сообщение не от клиента.");
     return res.sendStatus(200);
@@ -131,6 +136,26 @@ app.post("/", async (req, res) => {
   await appendToHistory(chat_id, `Агент: ${aiAnswer}`);
   // Меняем статус тикета
   if (ticket_id) {
+    
+  // Обработка фразы о передаче оператору
+  if (aiAnswer.toLowerCase().includes("переключ") && aiAnswer.toLowerCase().includes("оператор")) {
+    try {
+      const changeRes = await fetch("https://api.usedesk.ru/chat/changeAssignee", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          api_token: USEDESK_API_TOKEN,
+          chat_id,
+          user_id: 293758
+        })
+      });
+      const changeResult = await changeRes.json();
+      console.log("👤 Тикет перенаправлен на оператора:", JSON.stringify(changeResult, null, 2));
+    } catch (err) {
+      console.error("❌ Ошибка при назначении оператора:", err);
+    }
+  } else {
+
     const status = isAskingClarification(aiAnswer) ? 6 : 2;
     try {
       const response = await fetch("https://api.usedesk.ru/update/ticket", {

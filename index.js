@@ -17,6 +17,7 @@ const PORT = process.env.PORT || 10000;
 const USEDESK_API_TOKEN = process.env.USEDESK_API_TOKEN;
 const USEDESK_USER_ID = process.env.USEDESK_USER_ID;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const CLIENT_ID_LIMITED = "175888649";
 
 const HISTORY_FILE = "/mnt/data/chat_history.json";
 const HISTORY_TTL_MS = 8 * 60 * 60 * 1000; // 8 часов
@@ -112,14 +113,10 @@ async function updateTicketStatus(ticketId, status, clientName) {
 app.post("/", async (req, res) => {
   const data = req.body;
   if (!data || !data.text || data.from !== "client") return res.sendStatus(200);
-  
+  if (data.client_id != CLIENT_ID_LIMITED) return res.sendStatus(200);
+
   const chat_id = data.chat_id;
   const message = data.text;
-  if (data.ticket?.assignee_id !== null) return res.sendStatus(200);
-  const normalizedText = message.toLowerCase();
-  const wantsManager = ["менеджер", "переключи", "оператор", "позови"].some(trigger =>
-    normalizedText.includes(trigger)
-  );
   const ticket_id = data.ticket?.id;
   const ticket_status = data.ticket?.status_id;
   const client_id = data.client?.id;
@@ -153,8 +150,10 @@ app.post("/", async (req, res) => {
    — У нас пока нет мобильного приложения
    — Мы официально сотрудничаем с Яндексом (есть в списке провайдеров на их сайте)
    — Работаем по всей Республике Казахстан
-   Если не уверен в ответе — переспрашивай. Если вопрос не по адресу — вежливо перенаправь клиента. Главное — будь полезен с первого сообщения.
-`;
+   — По другим вопросам переключи на менеджера и скажи что переключаешь на менеджера, аккуратно. 
+Если не уверен в ответе — лучше переключи на менеджера сменив исполнителя в usedesk. Если вопрос не по адресу — вежливо перенаправь клиента. Главное — будь полезен с первого сообщения.
+не здоровайся несколько раз, только 1 раз за сутки.`;
+  
   const fullPrompt = systemPrompt + "\n\n" + buildExtendedPrompt(faq, message, history);
 
   let aiAnswer = "Извините, не смог придумать ответ 😅";
@@ -182,7 +181,7 @@ app.post("/", async (req, res) => {
 
     console.log("🤖 Ответ от Gemini:", aiAnswer);
 
-    if (isUnrecognizedResponse(aiAnswer) || wantsManager) {
+    if (isUnrecognizedResponse(aiAnswer)) {
       isUnrecognized = true;
       logUnanswered(message, data.client_id);
       aiAnswer = "К этому вопросу подключится наш менеджер, пожалуйста, ожидайте 🙌";
@@ -206,14 +205,17 @@ app.post("/", async (req, res) => {
   }
 
   try {
-    const sendResponse = await fetch("https://api.usedesk.ru/chat/sendMessage", {
+    await fetch("https://api.usedesk.ru/chat/sendMessage", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ api_token: USEDESK_API_TOKEN, chat_id, user_id: USEDESK_USER_ID, text: aiAnswer })
+      body: JSON.stringify({
+        api_token: USEDESK_API_TOKEN,
+        chat_id,
+        user_id: USEDESK_USER_ID,
+        text: aiAnswer
+      })
     });
     await appendToHistory(chat_id, `Агент: ${aiAnswer}`);
-    const sendData = await sendResponse.json();
-    console.log("📬 Ответ от Usedesk API:", JSON.stringify(sendData, null, 2));
     console.log("✅ Ответ отправлен клиенту");
   } catch (err) {
     console.error("❌ Ошибка отправки в Usedesk:", err);

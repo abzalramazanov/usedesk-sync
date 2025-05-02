@@ -15,6 +15,7 @@ app.use(bodyParser.json());
 
 const PORT = process.env.PORT || 10000;
 const USEDESK_API_TOKEN = process.env.USEDESK_API_TOKEN;
+const USEDESK_USER_ID = process.env.USEDESK_USER_ID;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 const HISTORY_FILE = "/mnt/data/chat_history.json";
@@ -114,6 +115,7 @@ app.post("/", async (req, res) => {
   
   const chat_id = data.chat_id;
   const message = data.text;
+  if (data.ticket?.assignee_id !== null) return res.sendStatus(200);
   const normalizedText = message.toLowerCase();
   const wantsManager = ["менеджер", "переключи", "оператор", "позови"].some(trigger =>
     normalizedText.includes(trigger)
@@ -207,12 +209,7 @@ app.post("/", async (req, res) => {
     const sendResponse = await fetch("https://api.usedesk.ru/chat/sendMessage", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        api_token: USEDESK_API_TOKEN,
-        chat_id,
-        user_id: 232142885,
-        text: aiAnswer
-      })
+      body: JSON.stringify({ api_token: USEDESK_API_TOKEN, chat_id, user_id: USEDESK_USER_ID, text: aiAnswer })
     });
     await appendToHistory(chat_id, `Агент: ${aiAnswer}`);
     const sendData = await sendResponse.json();

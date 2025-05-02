@@ -35,9 +35,7 @@ function buildExtendedPrompt(faq, userMessage, history = []) {
       if (item.aliases && item.aliases.length > 0) {
         item.aliases.forEach((alias) => {
           block += "Q: " + alias + "\nA: " + item.answer + "\n\n";
-        });
       }
-    });
   }
   const chatHistory = history.length > 0 ? `\nИстория переписки:\n${history.map(h => h.text).join("\n")}` : "";
   block += `${chatHistory}\n\nВопрос клиента: "${userMessage}"\nОтвет:`;
@@ -108,7 +106,6 @@ app.post("/", async (req, res) => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: fullPrompt }] }] })
-    });
     const geminiData = await geminiRes.json();
     aiAnswer = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || aiAnswer;
     console.log("🤖 Ответ от Gemini:", aiAnswer);
@@ -126,7 +123,6 @@ app.post("/", async (req, res) => {
         user_id: 293758,
         text: aiAnswer
       })
-    });
     const result = await response.json();
     console.log("📬 Ответ от Usedesk API:", JSON.stringify(result, null, 2));
   } catch (err) {
@@ -148,7 +144,6 @@ app.post("/", async (req, res) => {
           chat_id,
           user_id: 293758
         })
-      });
       const changeResult = await changeRes.json();
       console.log("👤 Тикет перенаправлен на оператора:", JSON.stringify(changeResult, null, 2));
     } catch (err) {
@@ -166,7 +161,6 @@ app.post("/", async (req, res) => {
           ticket_id,
           status: String(status)
         })
-      });
       const result = await response.json();
       console.log(`📌 Статус тикета #${ticket_id} обновлён → ${status}`);
     } catch (err) {
@@ -175,8 +169,6 @@ app.post("/", async (req, res) => {
   }
 
   res.sendStatus(200);
-});
 
 app.listen(PORT, () => {
   console.log(`✅ Сервер с ИИ и Render-диском подключен 🚀 (порт ${PORT})`);
-});

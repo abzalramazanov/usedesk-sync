@@ -15,7 +15,6 @@ app.use(bodyParser.json());
 
 const PORT = process.env.PORT || 10000;
 const USEDESK_API_TOKEN = process.env.USEDESK_API_TOKEN;
-const USEDESK_USER_ID = process.env.USEDESK_USER_ID;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 const HISTORY_FILE = "/mnt/data/chat_history.json";
@@ -73,25 +72,6 @@ async function appendToHistory(chatId, message) {
   console.log(`💾 История обновлена: [${chatId}] → ${message}`);
 }
 
-function isAskingClarification(answer) {
-  const clarifiers = ["уточните","что именно","можете уточнить","не совсем понял","уточните, пожалуйста","могли бы пояснить","чем могу помочь","как могу помочь","что вас интересует","опишите подробнее","напишите подробнее","расскажите подробнее"];
-  return clarifiers.some(word => answer.toLowerCase().includes(word));
-}
-
-async function updateTicketStatus(ticketId, status, clientName) {
-  try {
-    const response = await fetch("https://api.usedesk.ru/update/ticket", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ api_token: USEDESK_API_TOKEN, ticket_id: ticketId, status: String(status) })
-    });
-    await response.json();
-    console.log(`🎯 Клиент: ${clientName} | Статус тикета #${ticketId} → ${status}`);
-  } catch (err) {
-    console.error("❌ Ошибка обновления статуса тикета:", err);
-  }
-}
-
 app.post("/", async (req, res) => {
   const data = req.body;
   console.log("🔥 Входящий запрос:", JSON.stringify(data, null, 2));
@@ -104,18 +84,14 @@ app.post("/", async (req, res) => {
   const chat_id = data.chat_id;
   const message = data.text || "[Без текста]";
   const ticket_id = data.ticket?.id;
-  const ticket_status = data.ticket?.status_id;
-  const client_id = data.client?.id;
-  const client_name = data.client?.name || "Неизвестно";
-
-  await appendToHistory(chat_id, `Клиент: ${message}`);
   const history = await getChatHistory(chat_id);
 
-  const systemPrompt = `Ты — агент клиентской поддержки сервиса Payda ЭДО. Отвечай лаконично, вежливо и по делу. Используй разговорный, но профессиональный стиль. Ниже — основные вопросы: ...`;
-  const fullPrompt = systemPrompt + "\n\n" + buildExtendedPrompt(faq, message, history);
+  await appendToHistory(chat_id, `Клиент: ${message}`);
+
+  const fullPrompt = "Ты — агент поддержки Payda ЭДО. Отвечай вежливо и кратко." +
+                     "\n\n" + buildExtendedPrompt(faq, message, history);
 
   let aiAnswer = "Извините, не смог придумать ответ 😅";
-  let isUnrecognized = false;
 
   try {
     const geminiRes = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + GEMINI_API_KEY, {
@@ -125,20 +101,29 @@ app.post("/", async (req, res) => {
     });
     const geminiData = await geminiRes.json();
     aiAnswer = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || aiAnswer;
-
-    const lastGreet = recentGreetings[ticket_id];
-    const now = Date.now();
-    if (aiAnswer.toLowerCase().startsWith("здравствуйте") && lastGreet && now - lastGreet < 86400000) {
-      aiAnswer = aiAnswer.replace(/^здравствуйте[!,.\s]*/i, "").trimStart();
-    } else if (aiAnswer.toLowerCase().startsWith("здравствуйте")) {
-      recentGreetings[ticket_id] = now;
-    }
-
     console.log("🤖 Ответ от Gemini:", aiAnswer);
   } catch (err) {
     console.error("❌ Ошибка Gemini:", err);
   }
 
+  try {
+    const response = await fetch("https://api.usedesk.ru/chat/sendMessage", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        api_token: USEDESK_API_TOKEN,
+        chat_id,
+        user_id: 293758,
+        text: aiAnswer
+      })
+    });
+    const result = await response.json();
+    console.log("📬 Ответ от Usedesk API:", JSON.stringify(result, null, 2));
+  } catch (err) {
+    console.error("❌ Ошибка отправки в Usedesk:", err);
+  }
+
+  await appendToHistory(chat_id, `Агент: ${aiAnswer}`);
   res.sendStatus(200);
 });
 

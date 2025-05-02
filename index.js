@@ -17,6 +17,7 @@ const PORT = process.env.PORT || 10000;
 const USEDESK_API_TOKEN = process.env.USEDESK_API_TOKEN;
 const USEDESK_USER_ID = process.env.USEDESK_USER_ID;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const CLIENT_ID_LIMITED = "175888649";
 
 const HISTORY_FILE = "/mnt/data/chat_history.json";
 const HISTORY_TTL_MS = 8 * 60 * 60 * 1000; // 8 часов
@@ -111,11 +112,15 @@ async function updateTicketStatus(ticketId, status, clientName) {
 
 app.post("/", async (req, res) => {
   const data = req.body;
-  console.log("🔥 Получен полный запрос:", JSON.stringify(data, null, 2));
   if (!data || !data.text || data.from !== "client") return res.sendStatus(200);
-  
+  if (data.client_id != CLIENT_ID_LIMITED) return res.sendStatus(200);
+
   const chat_id = data.chat_id;
   const message = data.text;
+  const normalizedText = message.toLowerCase();
+  const wantsManager = ["менеджер", "переключи", "оператор", "позови"].some(trigger =>
+    normalizedText.includes(trigger)
+  );
   const ticket_id = data.ticket?.id;
   const ticket_status = data.ticket?.status_id;
   const client_id = data.client?.id;
@@ -179,7 +184,7 @@ app.post("/", async (req, res) => {
 
     console.log("🤖 Ответ от Gemini:", aiAnswer);
 
-    if (isUnrecognizedResponse(aiAnswer)) {
+    if (isUnrecognizedResponse(aiAnswer) || wantsManager) {
       isUnrecognized = true;
       logUnanswered(message, data.client_id);
       aiAnswer = "К этому вопросу подключится наш менеджер, пожалуйста, ожидайте 🙌";

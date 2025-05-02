@@ -17,7 +17,6 @@ const PORT = process.env.PORT || 10000;
 const USEDESK_API_TOKEN = process.env.USEDESK_API_TOKEN;
 const USEDESK_USER_ID = process.env.USEDESK_USER_ID;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const CLIENT_ID_LIMITED = "175888649";
 
 const HISTORY_FILE = "/mnt/data/chat_history.json";
 const HISTORY_TTL_MS = 8 * 60 * 60 * 1000; // 8 часов
@@ -113,8 +112,7 @@ async function updateTicketStatus(ticketId, status, clientName) {
 app.post("/", async (req, res) => {
   const data = req.body;
   if (!data || !data.text || data.from !== "client") return res.sendStatus(200);
-  if (data.client_id != CLIENT_ID_LIMITED) return res.sendStatus(200);
-
+  
   const chat_id = data.chat_id;
   const message = data.text;
   const normalizedText = message.toLowerCase();
@@ -154,8 +152,7 @@ app.post("/", async (req, res) => {
    — У нас пока нет мобильного приложения
    — Мы официально сотрудничаем с Яндексом (есть в списке провайдеров на их сайте)
    — Работаем по всей Республике Казахстан
-   — По другим вопросам можно писать на payda.info@gmail.com или в Instagram @payda_edo
-Если не уверен в ответе — переспрашивай. Если вопрос не по адресу — вежливо перенаправь клиента. Главное — будь полезен с первого сообщения.
+   Если не уверен в ответе — переспрашивай. Если вопрос не по адресу — вежливо перенаправь клиента. Главное — будь полезен с первого сообщения.
 `;
   const fullPrompt = systemPrompt + "\n\n" + buildExtendedPrompt(faq, message, history);
 

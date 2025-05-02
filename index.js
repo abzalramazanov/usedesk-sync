@@ -113,7 +113,7 @@ async function updateTicketStatus(ticketId, status, clientName) {
 app.post("/", async (req, res) => {
   const data = req.body;
   if (!data || !data.text || data.from !== "client") return res.sendStatus(200);
-  if (data.client_id != CLIENT_ID_LIMITED) return res.sendStatus(200);
+  if (data.ticket?.assignee_id !== null) return res.sendStatus(200);
 
   const chat_id = data.chat_id;
   const message = data.text;
@@ -202,6 +202,16 @@ app.post("/", async (req, res) => {
   if (ticket_status === 3) {
     return res.sendStatus(200);
   }
+
+  const now = new Date();
+  const day = now.getUTCDay(); // Sunday = 0, Monday = 1, ..., Saturday = 6
+  const hour = now.getUTCHours() + 5; // GMT+5 for Kazakhstan
+
+  if (day === 0 || day === 6 || hour < 9 || hour >= 18) {
+    console.log("⏰ Вне рабочего времени — сообщение не обрабатывается");
+    return res.sendStatus(200);
+  }
+
 
   try {
     await fetch("https://api.usedesk.ru/chat/sendMessage", {

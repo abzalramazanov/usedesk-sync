@@ -113,7 +113,7 @@ async function updateTicketStatus(ticketId, status, clientName) {
 app.post("/", async (req, res) => {
   const data = req.body;
   if (!data || !data.text || data.from !== "client") return res.sendStatus(200);
-  if (data.ticket?.assignee_id !== null) return res.sendStatus(200);
+  if (data.client_id != CLIENT_ID_LIMITED) return res.sendStatus(200);
 
   const chat_id = data.chat_id;
   const message = data.text;
@@ -153,6 +153,7 @@ app.post("/", async (req, res) => {
    — По другим вопросам переключи на менеджера и скажи что переключаешь на менеджера, аккуратно. 
 Если не уверен в ответе — лучше переключи на менеджера сменив исполнителя в usedesk. Если вопрос не по адресу — вежливо перенаправь клиента. Главное — будь полезен с первого сообщения.
 не здоровайся несколько раз, только 1 раз за сутки.`;
+  
   const fullPrompt = systemPrompt + "\n\n" + buildExtendedPrompt(faq, message, history);
 
   let aiAnswer = "Извините, не смог придумать ответ 😅";
@@ -203,16 +204,6 @@ app.post("/", async (req, res) => {
     return res.sendStatus(200);
   }
 
-  const now = new Date();
-  const day = now.getUTCDay(); // Sunday = 0, Monday = 1, ..., Saturday = 6
-  const hour = now.getUTCHours() + 5; // GMT+5 for Kazakhstan
-
-  if (day === 0 || day === 6 || hour < 9 || hour >= 18) {
-    console.log("⏰ Вне рабочего времени — сообщение не обрабатывается");
-    return res.sendStatus(200);
-  }
-
-
   try {
     await fetch("https://api.usedesk.ru/chat/sendMessage", {
       method: "POST",
@@ -234,6 +225,7 @@ app.post("/", async (req, res) => {
     const status = isAskingClarification(aiAnswer) ? 6 : 2;
     await updateTicketStatus(ticket_id, status, client_name);
   }
+  // Если isUnrecognized === true, статус не меняем (оставляем открытым)
 
   res.sendStatus(200);
 });

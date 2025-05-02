@@ -15,7 +15,6 @@ app.use(bodyParser.json());
 
 const PORT = process.env.PORT || 10000;
 const USEDESK_API_TOKEN = process.env.USEDESK_API_TOKEN;
-const USEDESK_USER_ID = process.env.USEDESK_USER_ID;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 const HISTORY_FILE = "/mnt/data/chat_history.json";
@@ -190,7 +189,7 @@ app.post("/", async (req, res) => {
         body: JSON.stringify({
           api_token: USEDESK_API_TOKEN,
           chat_id,
-          user_id: USEDESK_USER_ID
+          user_id: 293758
         })
       });
     }
@@ -209,7 +208,7 @@ app.post("/", async (req, res) => {
       body: JSON.stringify({
         api_token: USEDESK_API_TOKEN,
         chat_id,
-        user_id: USEDESK_USER_ID,
+          user_id: 293758,
         text: aiAnswer
       })
     });

@@ -80,9 +80,12 @@ app.post("/", async (req, res) => {
   const data = req.body;
   console.log("🔥 Входящий запрос:", JSON.stringify(data, null, 2));
 
+  const EXEMPT_CLIENTS = [175888649, 171953054];
+  const clientId = data.client_id;
+
   const now = new Date().toLocaleString("en-US", { timeZone: "Asia/Almaty" });
   const current = new Date(now);
-  const weekday = current.getDay(); // Sunday = 0, Monday = 1, ..., Saturday = 6
+  const weekday = current.getDay(); // Sunday = 0
   const hour = current.getHours();
   const minute = current.getMinutes();
   const withinTime =
@@ -90,8 +93,8 @@ app.post("/", async (req, res) => {
     (hour > 9 || (hour === 9 && minute >= 3)) &&
     (hour < 18 || (hour === 18 && minute === 0));
 
-  if (!withinTime) {
-    console.log("⏰ Вне графика — бот не отвечает");
+  if (!withinTime && !EXEMPT_CLIENTS.includes(clientId)) {
+    console.log("⏰ Вне графика — бот не отвечает (client_id " + clientId + ")");
     return res.sendStatus(200);
   }
 
@@ -118,7 +121,6 @@ app.post("/", async (req, res) => {
                      "\n\n" + buildExtendedPrompt(faq, message, history);
 
   let aiAnswer = "Извините, не смог придумать ответ 😅";
-  let isTransferToManager = false;
 
   try {
     const geminiRes = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + GEMINI_API_KEY, {
@@ -128,7 +130,6 @@ app.post("/", async (req, res) => {
     });
     const geminiData = await geminiRes.json();
     aiAnswer = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || aiAnswer;
-
     console.log("🤖 Ответ от Gemini:", aiAnswer);
   } catch (err) {
     console.error("❌ Ошибка Gemini:", err);
@@ -153,7 +154,6 @@ app.post("/", async (req, res) => {
 
   await appendToHistory(chat_id, `Агент: ${aiAnswer}`);
 
-  // Обработка передачи оператору
   if (aiAnswer.toLowerCase().includes("переключ") && aiAnswer.toLowerCase().includes("оператор")) {
     try {
       const assignRes = await fetch("https://api.usedesk.ru/chat/changeAssignee", {
@@ -173,7 +173,6 @@ app.post("/", async (req, res) => {
     return res.sendStatus(200);
   }
 
-  // Меняем статус
   if (ticket_id) {
     const status = isAskingClarification(aiAnswer) ? 6 : 2;
     try {

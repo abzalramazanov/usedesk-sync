@@ -35,6 +35,7 @@ function buildExtendedPrompt(faq, userMessage, history = []) {
       if (item.aliases && item.aliases.length > 0) {
         item.aliases.forEach((alias) => {
           block += "Q: " + alias + "\nA: " + item.answer + "\n\n";
+        });
       }
   }
   const chatHistory = history.length > 0 ? `\nИстория переписки:\n${history.map(h => h.text).join("\n")}` : "";

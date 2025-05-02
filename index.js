@@ -1,4 +1,4 @@
-// index_with_history.js
+
 import express from "express";
 import fetch from "node-fetch";
 import bodyParser from "body-parser";
@@ -26,7 +26,7 @@ if (!fs.existsSync(HISTORY_FILE)) {
   console.log("📁 Новый файл истории создан на диске Render (/mnt/data)");
 }
 
-const recentGreetings = {}; // key: ticket_id, value: timestamp
+const recentGreetings = {};
 
 function buildExtendedPrompt(faq, userMessage, history = []) {
   let block = "📦 Дополнительная база вопросов и ответов:\n";
@@ -41,7 +41,7 @@ function buildExtendedPrompt(faq, userMessage, history = []) {
     });
   }
   const chatHistory = history.length > 0 ? `\nИстория переписки:\n${history.map(h => h.text).join("\n")}` : "";
-  block += `${chatHistory}\n\nВопрос клиента: \"${userMessage}\"\nОтвет:`;
+  block += `${chatHistory}\n\nВопрос клиента: "${userMessage}"\nОтвет:`;
   return block;
 }
 
@@ -74,20 +74,7 @@ async function appendToHistory(chatId, message) {
 }
 
 function isAskingClarification(answer) {
-  const clarifiers = [
-    "уточните",
-    "что именно",
-    "можете уточнить",
-    "не совсем понял",
-    "уточните, пожалуйста",
-    "могли бы пояснить",
-    "чем могу помочь",
-    "как могу помочь",
-    "что вас интересует",
-    "опишите подробнее",
-    "напишите подробнее",
-    "расскажите подробнее"
-  ];
+  const clarifiers = ["уточните","что именно","можете уточнить","не совсем понял","уточните, пожалуйста","могли бы пояснить","чем могу помочь","как могу помочь","что вас интересует","опишите подробнее","напишите подробнее","расскажите подробнее"];
   return clarifiers.some(word => answer.toLowerCase().includes(word));
 }
 
@@ -96,11 +83,7 @@ async function updateTicketStatus(ticketId, status, clientName) {
     const response = await fetch("https://api.usedesk.ru/update/ticket", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        api_token: USEDESK_API_TOKEN,
-        ticket_id: ticketId,
-        status: String(status)
-      })
+      body: JSON.stringify({ api_token: USEDESK_API_TOKEN, ticket_id: ticketId, status: String(status) })
     });
     await response.json();
     console.log(`🎯 Клиент: ${clientName} | Статус тикета #${ticketId} → ${status}`);
@@ -111,62 +94,35 @@ async function updateTicketStatus(ticketId, status, clientName) {
 
 app.post("/", async (req, res) => {
   const data = req.body;
-  if (!data || !data.text || data.from !== "client") return res.sendStatus(200);
-  if (data.client_id != CLIENT_ID_LIMITED) return res.sendStatus(200);
+  console.log("🔥 Входящий запрос:", JSON.stringify(data, null, 2));
+
+  if (!data || data.from !== "client") {
+    console.log("⚠️ Пропущено: нет данных или сообщение не от клиента.");
+    return res.sendStatus(200);
+  }
 
   const chat_id = data.chat_id;
-  const message = data.text;
+  const message = data.text || "[Без текста]";
   const ticket_id = data.ticket?.id;
   const ticket_status = data.ticket?.status_id;
   const client_id = data.client?.id;
   const client_name = data.client?.name || "Неизвестно";
-  console.log("🚀 Получено сообщение:", message);
 
   await appendToHistory(chat_id, `Клиент: ${message}`);
   const history = await getChatHistory(chat_id);
 
-  const systemPrompt = `Ты — агент клиентской поддержки сервиса Payda ЭДО. Отвечай лаконично, вежливо и по делу. Используй разговорный, но профессиональный стиль. Ниже — основные вопросы:
-  Ты агент службы поддержки сервиса Payda ЭДО. Отвечай клиентам вежливо, кратко и по делу, с лёгкой дружелюбной интонацией. Не используй канцеляризмов, не уходи в лишние детали. Твоя задача — решить вопрос клиента или направить его, если он обращается не по адресу.
-
-Вот что тебе нужно знать:
-1. Чтобы выбрать Payda ЭДО как провайдера, клиент должен:
-   — Открыть чат поддержки в приложении Яндекс Про
-   — Написать: «Хочу перейти в Payda ЭДО»
-   — Указать свой ИИН
-   — Дождаться подтверждения
-2. После выбора нас как провайдера:
-   — Документы (АВР и ЭСФ) будут доступны на сайте https://taxi.edo.kz с 8 по 15 число каждого месяца. Мы ещё отправим смс на номер телефона, когда подписание начнётся. 
-   — Перед подписанием появится кнопка «Оплатить по Kaspi»
-   — Первый месяц — бесплатно, далее — 500 тг/мес
-   — Для водителей парка — бесплатно
-3. Для подписания документов используется приложение eGov Mobile и нужно ввести пароль от ИС ЭСФ. Если не подписать документы — Яндекс может ограничить вывод бонусов.
-4. Если документы не пришли:
-   — Нужно написать в Яндекс и уточнить, кто ваш текущий провайдер
-   — Payda ЭДО не может предоставить документы, если клиент не выбрал нас официально
-5. Другие вопросы:
-   — Если сменился номер — написать в Яндекс для обновления
-   — Если сайт не открывается — попробовать подключиться через Wi-Fi или мобильные данные
-   — У нас пока нет мобильного приложения
-   — Мы официально сотрудничаем с Яндексом (есть в списке провайдеров на их сайте)
-   — Работаем по всей Республике Казахстан
-   — По другим вопросам переключи на менеджера и скажи что переключаешь на менеджера, аккуратно. 
-Если не уверен в ответе — лучше переключи на менеджера сменив исполнителя в usedesk. Если вопрос не по адресу — вежливо перенаправь клиента. Главное — будь полезен с первого сообщения.
-не здоровайся несколько раз, только 1 раз за сутки.`;
-  
+  const systemPrompt = `Ты — агент клиентской поддержки сервиса Payda ЭДО. Отвечай лаконично, вежливо и по делу. Используй разговорный, но профессиональный стиль. Ниже — основные вопросы: ...`;
   const fullPrompt = systemPrompt + "\n\n" + buildExtendedPrompt(faq, message, history);
 
   let aiAnswer = "Извините, не смог придумать ответ 😅";
   let isUnrecognized = false;
 
   try {
-    const geminiRes = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + GEMINI_API_KEY,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: fullPrompt }] }] })
-      }
-    );
+    const geminiRes = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + GEMINI_API_KEY, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: fullPrompt }] }] })
+    });
     const geminiData = await geminiRes.json();
     aiAnswer = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || aiAnswer;
 
@@ -179,50 +135,8 @@ app.post("/", async (req, res) => {
     }
 
     console.log("🤖 Ответ от Gemini:", aiAnswer);
-
-    if (isUnrecognizedResponse(aiAnswer)) {
-      isUnrecognized = true;
-      logUnanswered(message, data.client_id);
-      aiAnswer = "К этому вопросу подключится наш менеджер, пожалуйста, ожидайте 🙌";
-
-      await fetch("https://api.usedesk.ru/chat/changeAssignee", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          api_token: USEDESK_API_TOKEN,
-          chat_id,
-          user_id: USEDESK_USER_ID
-        })
-      });
-    }
   } catch (err) {
     console.error("❌ Ошибка Gemini:", err);
-  }
-
-  if (ticket_status === 3) {
-    return res.sendStatus(200);
-  }
-
-  try {
-    await fetch("https://api.usedesk.ru/chat/sendMessage", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        api_token: USEDESK_API_TOKEN,
-        chat_id,
-        user_id: USEDESK_USER_ID,
-        text: aiAnswer
-      })
-    });
-    await appendToHistory(chat_id, `Агент: ${aiAnswer}`);
-    console.log("✅ Ответ отправлен клиенту");
-  } catch (err) {
-    console.error("❌ Ошибка отправки в Usedesk:", err);
-  }
-
-  if (ticket_id && !isUnrecognized) {
-    const status = isAskingClarification(aiAnswer) ? 6 : 2;
-    await updateTicketStatus(ticket_id, status, client_name);
   }
 
   res.sendStatus(200);

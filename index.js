@@ -15,6 +15,7 @@ app.use(bodyParser.json());
 
 const PORT = process.env.PORT || 10000;
 const USEDESK_API_TOKEN = process.env.USEDESK_API_TOKEN;
+const USEDESK_USER_ID = process.env.USEDESK_USER_ID;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 const HISTORY_FILE = "/mnt/data/chat_history.json";
@@ -111,7 +112,8 @@ async function updateTicketStatus(ticketId, status, clientName) {
 app.post("/", async (req, res) => {
   const data = req.body;
   if (!data || !data.text || data.from !== "client") return res.sendStatus(200);
-  
+  if (data.client_id != CLIENT_ID_LIMITED) return res.sendStatus(200);
+
   const chat_id = data.chat_id;
   const message = data.text;
   const ticket_id = data.ticket?.id;
@@ -189,7 +191,7 @@ app.post("/", async (req, res) => {
         body: JSON.stringify({
           api_token: USEDESK_API_TOKEN,
           chat_id,
-          user_id: 293758
+          user_id: USEDESK_USER_ID
         })
       });
     }
@@ -202,19 +204,17 @@ app.post("/", async (req, res) => {
   }
 
   try {
-    const sendResponse = await fetch("https://api.usedesk.ru/chat/sendMessage", {
+    await fetch("https://api.usedesk.ru/chat/sendMessage", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         api_token: USEDESK_API_TOKEN,
         chat_id,
-          user_id: 293758,
+        user_id: USEDESK_USER_ID,
         text: aiAnswer
       })
     });
     await appendToHistory(chat_id, `Агент: ${aiAnswer}`);
-    const sendResult = await sendResponse.json();
-    console.log("📬 Ответ от Usedesk API:", JSON.stringify(sendResult, null, 2));
     console.log("✅ Ответ отправлен клиенту");
   } catch (err) {
     console.error("❌ Ошибка отправки в Usedesk:", err);

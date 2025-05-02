@@ -15,7 +15,6 @@ app.use(bodyParser.json());
 
 const PORT = process.env.PORT || 10000;
 const USEDESK_API_TOKEN = process.env.USEDESK_API_TOKEN;
-const USEDESK_USER_ID = process.env.USEDESK_USER_ID;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 const HISTORY_FILE = "/mnt/data/chat_history.json";
@@ -205,17 +204,19 @@ app.post("/", async (req, res) => {
   }
 
   try {
-    await fetch("https://api.usedesk.ru/chat/sendMessage", {
+    const sendResponse = await fetch("https://api.usedesk.ru/chat/sendMessage", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         api_token: USEDESK_API_TOKEN,
         chat_id,
-        user_id: USEDESK_USER_ID,
+        user_id: 232142885,
         text: aiAnswer
       })
     });
     await appendToHistory(chat_id, `Агент: ${aiAnswer}`);
+    const sendData = await sendResponse.json();
+    console.log("📬 Ответ от Usedesk API:", JSON.stringify(sendData, null, 2));
     console.log("✅ Ответ отправлен клиенту");
   } catch (err) {
     console.error("❌ Ошибка отправки в Usedesk:", err);

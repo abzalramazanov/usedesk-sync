@@ -18,11 +18,11 @@ const USEDESK_API_TOKEN = process.env.USEDESK_API_TOKEN;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 const HISTORY_FILE = "/mnt/data/chat_history.json";
-const HISTORY_TTL_MS = 8 * 60 * 60 * 1000; // 8 часов
+const HISTORY_TTL_MS = 8 * 60 * 60 * 1000;
 
 if (!fs.existsSync(HISTORY_FILE)) {
   fs.writeFileSync(HISTORY_FILE, "{}");
-  console.log("📁 Новый файл истории создан на диске Render (/mnt/data)");
+  console.log("📁 История создана");
 }
 
 const recentGreetings = {};
@@ -37,6 +37,7 @@ function buildExtendedPrompt(faq, userMessage, history = []) {
           block += "Q: " + alias + "\nA: " + item.answer + "\n\n";
         });
       }
+    });
   }
   const chatHistory = history.length > 0 ? `\nИстория переписки:\n${history.map(h => h.text).join("\n")}` : "";
   block += `${chatHistory}\n\nВопрос клиента: "${userMessage}"\nОтвет:`;
@@ -71,44 +72,48 @@ async function appendToHistory(chatId, message) {
   console.log(`💾 История обновлена: [${chatId}] → ${message}`);
 }
 
-
-function isAskingClarification(answer) {
-  return answer.includes("?") && !answer.toLowerCase().includes("хорошо") && !answer.toLowerCase().includes("понял");
+function isAskingClarification(text) {
+  return text.includes("?") && !text.toLowerCase().includes("хорошо");
 }
 
 app.post("/", async (req, res) => {
   const data = req.body;
   console.log("🔥 Входящий запрос:", JSON.stringify(data, null, 2));
 
-  if (data.ticket?.assignee_id !== null) {
-    console.log(`⚠️ Пропущено: тикет уже назначен на user_id ${data.ticket.assignee_id}`);
+  if (!data || data.from !== "client") {
+    console.log("⚠️ Пропущено: не клиент");
     return res.sendStatus(200);
   }
 
-  if (!data || data.from !== "client") {
-    console.log("⚠️ Пропущено: нет данных или сообщение не от клиента.");
+  if (data.ticket?.assignee_id !== null) {
+    console.log("⚠️ Пропущено: тикет уже назначен");
     return res.sendStatus(200);
   }
 
   const chat_id = data.chat_id;
   const message = data.text || "[Без текста]";
   const ticket_id = data.ticket?.id;
-  const history = await getChatHistory(chat_id);
+  const ticket_status = data.ticket?.status_id;
+  const client_name = data.client?.name || "Неизвестно";
 
   await appendToHistory(chat_id, `Клиент: ${message}`);
+  const history = await getChatHistory(chat_id);
 
-  const fullPrompt = "Ты — агент поддержки Payda ЭДО. Отвечай вежливо и кратко." +
+  const fullPrompt = "Ты — агент поддержки Payda ЭДО. Отвечай вежливо, коротко, по делу." +
                      "\n\n" + buildExtendedPrompt(faq, message, history);
 
   let aiAnswer = "Извините, не смог придумать ответ 😅";
+  let isTransferToManager = false;
 
   try {
     const geminiRes = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + GEMINI_API_KEY, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: fullPrompt }] }] })
+    });
     const geminiData = await geminiRes.json();
     aiAnswer = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || aiAnswer;
+
     console.log("🤖 Ответ от Gemini:", aiAnswer);
   } catch (err) {
     console.error("❌ Ошибка Gemini:", err);
@@ -124,6 +129,7 @@ app.post("/", async (req, res) => {
         user_id: 293758,
         text: aiAnswer
       })
+    });
     const result = await response.json();
     console.log("📬 Ответ от Usedesk API:", JSON.stringify(result, null, 2));
   } catch (err) {
@@ -131,13 +137,11 @@ app.post("/", async (req, res) => {
   }
 
   await appendToHistory(chat_id, `Агент: ${aiAnswer}`);
-  // Меняем статус тикета
-  if (ticket_id) {
-    
-  // Обработка фразы о передаче оператору
+
+  // Обработка передачи оператору
   if (aiAnswer.toLowerCase().includes("переключ") && aiAnswer.toLowerCase().includes("оператор")) {
     try {
-      const changeRes = await fetch("https://api.usedesk.ru/chat/changeAssignee", {
+      const assignRes = await fetch("https://api.usedesk.ru/chat/changeAssignee", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -145,13 +149,17 @@ app.post("/", async (req, res) => {
           chat_id,
           user_id: 293758
         })
-      const changeResult = await changeRes.json();
-      console.log("👤 Тикет перенаправлен на оператора:", JSON.stringify(changeResult, null, 2));
+      });
+      const result = await assignRes.json();
+      console.log("👤 Назначен оператор (293758):", JSON.stringify(result, null, 2));
     } catch (err) {
-      console.error("❌ Ошибка при назначении оператора:", err);
+      console.error("❌ Ошибка назначения оператора:", err);
     }
-  } else {
+    return res.sendStatus(200);
+  }
 
+  // Меняем статус
+  if (ticket_id) {
     const status = isAskingClarification(aiAnswer) ? 6 : 2;
     try {
       const response = await fetch("https://api.usedesk.ru/update/ticket", {
@@ -162,6 +170,7 @@ app.post("/", async (req, res) => {
           ticket_id,
           status: String(status)
         })
+      });
       const result = await response.json();
       console.log(`📌 Статус тикета #${ticket_id} обновлён → ${status}`);
     } catch (err) {
@@ -170,6 +179,8 @@ app.post("/", async (req, res) => {
   }
 
   res.sendStatus(200);
+});
 
 app.listen(PORT, () => {
-  console.log(`✅ Сервер с ИИ и Render-диском подключен 🚀 (порт ${PORT})`);
+  console.log(`✅ Сервер подключён 🚀 (порт ${PORT})`);
+});

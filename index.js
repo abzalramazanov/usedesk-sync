@@ -80,6 +80,21 @@ app.post("/", async (req, res) => {
   const data = req.body;
   console.log("🔥 Входящий запрос:", JSON.stringify(data, null, 2));
 
+  const now = new Date().toLocaleString("en-US", { timeZone: "Asia/Almaty" });
+  const current = new Date(now);
+  const weekday = current.getDay(); // Sunday = 0, Monday = 1, ..., Saturday = 6
+  const hour = current.getHours();
+  const minute = current.getMinutes();
+  const withinTime =
+    (weekday >= 1 && weekday <= 5) &&
+    (hour > 9 || (hour === 9 && minute >= 3)) &&
+    (hour < 18 || (hour === 18 && minute === 0));
+
+  if (!withinTime) {
+    console.log("⏰ Вне графика — бот не отвечает");
+    return res.sendStatus(200);
+  }
+
   if (!data || data.from !== "client") {
     console.log("⚠️ Пропущено: не клиент");
     return res.sendStatus(200);

@@ -28,6 +28,19 @@ function unlock() {
   if (fs.existsSync(LOCK_FILE)) fs.unlinkSync(LOCK_FILE);
 }
 
+// 📛 Функция извлечения имени и отчества из full_name
+function extractPositionName(fullName) {
+  if (!fullName) return '';
+  const cleaned = fullName.replace(/ИП\s*/i, '').trim();
+  const parts = cleaned.split(/\s+/);
+  if (parts.length >= 3) {
+    const name = parts[1][0].toUpperCase() + parts[1].slice(1).toLowerCase();
+    const patronymic = parts[2][0].toUpperCase() + parts[2].slice(1).toLowerCase();
+    return `${name} ${patronymic}`;
+  }
+  return cleaned;
+}
+
 // 🧠 Работа с sent_clients.json
 function loadSentClients() {
   try {
@@ -54,8 +67,7 @@ function alreadySent(bin_iin, sentList) {
   return sentList.some(c => c.bin_iin === bin_iin);
 }
 
-// 📅 Новый способ чтения/записи даты — через Google Sheets (лист Meta)
-
+// 📅 Чтение даты из Google Sheets
 async function getLastLocal(doc) {
   try {
     const metaSheet = doc.sheetsByTitle['Meta'];
@@ -161,6 +173,8 @@ async function syncClients() {
     const bin_iin = row.bin_iin || '';
     const name = 'ИИН ' + bin_iin;
     const createdLocal = row.created_local?.trim();
+    const fullName = row.full_name || '';
+    const position = extractPositionName(fullName);
 
     if (!phone || !bin_iin || !createdLocal) {
       console.warn(`⚠️ Пропущена строка. phone: ${phone}, bin_iin: ${bin_iin}, created_local: ${createdLocal}`);
@@ -181,12 +195,13 @@ async function syncClients() {
         api_token: process.env.USEDESK_TOKEN,
         phone,
         name,
+        position // 👈 добавлено имя и отчество в поле должности
       });
 
       const clientId = response.data.client_id || '❓ unknown';
       console.log(`✅ Клиент создан → client_id: ${clientId}`);
 
-      await sleep(1000); // ⏱ Пауза перед тикетом
+      await sleep(1000);
 
       try {
         const ticketResp = await axios.post('https://api.usedesk.ru/create/ticket', {

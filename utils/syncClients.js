@@ -5,7 +5,6 @@ const { GoogleSpreadsheet } = require('google-spreadsheet');
 const creds = require('../credentials.json');
 
 // 📁 Пути
-const LAST_LOCAL_FILE = path.join(__dirname, '..', 'last_timestamp.txt');
 const LOCK_FILE = path.join(__dirname, '..', 'sync.lock');
 const SENT_LOG_FILE = path.join(__dirname, '..', 'sent_clients.json');
 
@@ -27,32 +26,6 @@ function lock() {
 }
 function unlock() {
   if (fs.existsSync(LOCK_FILE)) fs.unlinkSync(LOCK_FILE);
-}
-
-// 📅 Чтение/запись created_local
-function getLastLocal() {
-  try {
-    if (fs.existsSync(LAST_LOCAL_FILE)) {
-      const ts = fs.readFileSync(LAST_LOCAL_FILE, 'utf8').trim();
-      console.log(`🕒 Прочитан created_local из файла: ${ts}`);
-      return ts;
-    } else {
-      console.log(`📁 Файл last_timestamp.txt не найден. Используем default: ${DEFAULT_LOCAL}`);
-      return DEFAULT_LOCAL;
-    }
-  } catch (err) {
-    console.error('❌ Ошибка чтения last_timestamp.txt:', err.message);
-    return DEFAULT_LOCAL;
-  }
-}
-
-function saveLastLocal(timestampStr) {
-  try {
-    fs.writeFileSync(LAST_LOCAL_FILE, timestampStr);
-    console.log(`💾 Сохранён created_local: ${timestampStr}`);
-  } catch (err) {
-    console.error('❌ Ошибка записи last_timestamp.txt:', err.message);
-  }
 }
 
 // 🧠 Работа с sent_clients.json
@@ -79,6 +52,53 @@ function saveSentClient(bin_iin, created_local) {
 
 function alreadySent(bin_iin, sentList) {
   return sentList.some(c => c.bin_iin === bin_iin);
+}
+
+// 📅 Новый способ чтения/записи даты — через Google Sheets (лист Meta)
+
+async function getLastLocal(doc) {
+  try {
+    const metaSheet = doc.sheetsByTitle['Meta'];
+    if (!metaSheet) {
+      console.warn('⚠️ Лист Meta не найден. Используем default дату:', DEFAULT_LOCAL);
+      return DEFAULT_LOCAL;
+    }
+
+    await metaSheet.loadCells('A1');
+    const cell = metaSheet.getCell(0, 0);
+    const value = cell.value?.toString().trim();
+
+    if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value)) {
+      console.warn(`⚠️ Невалидная дата в Meta! A1: "${value}" → откатываем на default`);
+      return DEFAULT_LOCAL;
+    }
+
+    console.log(`🕒 Прочитан created_local из Google Sheets: ${value}`);
+    return value;
+  } catch (err) {
+    console.error('❌ Ошибка чтения даты из Meta:', err.message);
+    return DEFAULT_LOCAL;
+  }
+}
+
+async function saveLastLocal(doc, timestampStr) {
+  try {
+    let metaSheet = doc.sheetsByTitle['Meta'];
+
+    if (!metaSheet) {
+      console.warn('⚠️ Лист Meta не найден. Создаём...');
+      metaSheet = await doc.addSheet({ title: 'Meta', headerValues: [] });
+    }
+
+    await metaSheet.loadCells('A1');
+    const cell = metaSheet.getCell(0, 0);
+    cell.value = timestampStr;
+    await metaSheet.saveUpdatedCells();
+
+    console.log(`💾 Сохранён created_local в Google Sheets: ${timestampStr}`);
+  } catch (err) {
+    console.error('❌ Ошибка записи даты в Meta:', err.message);
+  }
 }
 
 // 🚀 Главная функция
@@ -116,7 +136,7 @@ async function syncClients() {
     return;
   }
 
-  const lastLocal = getLastLocal();
+  const lastLocal = await getLastLocal(doc);
   const sentClients = loadSentClients();
 
   const newRows = rows.filter((row) => {
@@ -134,7 +154,7 @@ async function syncClients() {
 
   let createdCount = 0;
   let skippedCount = 0;
-  let latestLocal = null; // ← теперь сохраняем именно последнюю строку
+  let latestLocal = null;
 
   for (const row of newRows) {
     const phone = String(row.phone_number || '').replace(/\D/g, '');
@@ -185,7 +205,7 @@ async function syncClients() {
       }
 
       saveSentClient(bin_iin, createdLocal);
-      latestLocal = createdLocal; // ← сохраняем дату последней успешной строки
+      latestLocal = createdLocal;
       createdCount++;
     } catch (err) {
       console.error(`❌ Ошибка создания клиента (${name}):`, err.response?.data || err.message);
@@ -194,7 +214,7 @@ async function syncClients() {
   }
 
   console.log(`📈 Готово. Создано: ${createdCount}, Пропущено: ${skippedCount}`);
-  if (latestLocal) saveLastLocal(latestLocal); // ← записываем дату
+  if (latestLocal) await saveLastLocal(doc, latestLocal);
   unlock();
 }
 

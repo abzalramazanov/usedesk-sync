@@ -42,13 +42,13 @@ async function syncClients() {
     const lastTimestamp = await getLastTimestamp();
     console.log(`📌 Обработка клиентов после: ${lastTimestamp}`);
 
-    const query = \`
+    const query = `
       SELECT phone_number, bin_iin, created
       FROM users_client
       WHERE client_category_id IS NOT NULL
         AND created > $1
       ORDER BY created ASC
-    \`;
+    `;
 
     const result = await db.query(query, [lastTimestamp]);
     const rows = result.rows;

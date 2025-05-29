@@ -134,7 +134,7 @@ async function syncClients() {
 
   let createdCount = 0;
   let skippedCount = 0;
-  let latestLocal = lastLocal;
+  let latestLocal = null; // ← теперь сохраняем именно последнюю строку
 
   for (const row of newRows) {
     const phone = String(row.phone_number || '').replace(/\D/g, '');
@@ -185,8 +185,8 @@ async function syncClients() {
       }
 
       saveSentClient(bin_iin, createdLocal);
+      latestLocal = createdLocal; // ← сохраняем дату последней успешной строки
       createdCount++;
-      if (createdLocal > latestLocal) latestLocal = createdLocal;
     } catch (err) {
       console.error(`❌ Ошибка создания клиента (${name}):`, err.response?.data || err.message);
       skippedCount++;
@@ -194,7 +194,7 @@ async function syncClients() {
   }
 
   console.log(`📈 Готово. Создано: ${createdCount}, Пропущено: ${skippedCount}`);
-  saveLastLocal(latestLocal);
+  if (latestLocal) saveLastLocal(latestLocal); // ← записываем дату
   unlock();
 }
 

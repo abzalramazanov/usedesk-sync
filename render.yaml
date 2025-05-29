@@ -1,0 +1,12 @@
+services:
+  - type: cron
+    name: usedesk-sync-job
+    runtime: node
+    schedule: "*/10 * * * *"
+    buildCommand: "npm install"
+    startCommand: "node utils/syncClients.js"
+    envVars:
+      - key: USEDESK_API_URL
+        value: https://api.usedesk.ru/create/client
+      - key: USEDESK_TOKEN
+        sync: false  # добавишь вручную в Render

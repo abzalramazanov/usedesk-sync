@@ -5,7 +5,7 @@ const { GoogleSpreadsheet } = require('google-spreadsheet');
 const creds = require('../credentials.json');
 
 // 📁 Пути
-const LAST_LOCAL_FILE = path.join(__dirname, '..', 'last_local.txt');
+const LAST_LOCAL_FILE = path.join(__dirname, '..', 'last_timestamp.txt');
 const LOCK_FILE = path.join(__dirname, '..', 'sync.lock');
 const SENT_LOG_FILE = path.join(__dirname, '..', 'sent_clients.json');
 
@@ -37,20 +37,21 @@ function getLastLocal() {
       console.log(`🕒 Прочитан created_local из файла: ${ts}`);
       return ts;
     } else {
-      console.log(`📁 Файл last_local.txt не найден. Используем default: ${DEFAULT_LOCAL}`);
+      console.log(`📁 Файл last_timestamp.txt не найден. Используем default: ${DEFAULT_LOCAL}`);
       return DEFAULT_LOCAL;
     }
   } catch (err) {
-    console.error('❌ Ошибка чтения last_local.txt:', err.message);
+    console.error('❌ Ошибка чтения last_timestamp.txt:', err.message);
     return DEFAULT_LOCAL;
   }
 }
+
 function saveLastLocal(timestampStr) {
   try {
     fs.writeFileSync(LAST_LOCAL_FILE, timestampStr);
     console.log(`💾 Сохранён created_local: ${timestampStr}`);
   } catch (err) {
-    console.error('❌ Ошибка записи last_local.txt:', err.message);
+    console.error('❌ Ошибка записи last_timestamp.txt:', err.message);
   }
 }
 
@@ -65,6 +66,7 @@ function loadSentClients() {
     return [];
   }
 }
+
 function saveSentClient(bin_iin, created_local) {
   try {
     const list = loadSentClients();
@@ -74,8 +76,9 @@ function saveSentClient(bin_iin, created_local) {
     console.error('❌ Ошибка записи в sent_clients.json:', err.message);
   }
 }
-function alreadySent(bin_iin, created_local, sentList) {
-  return sentList.some(c => c.bin_iin === bin_iin && c.created_local === created_local);
+
+function alreadySent(bin_iin, sentList) {
+  return sentList.some(c => c.bin_iin === bin_iin);
 }
 
 // 🚀 Главная функция
@@ -145,8 +148,8 @@ async function syncClients() {
       continue;
     }
 
-    if (alreadySent(bin_iin, createdLocal, sentClients)) {
-      console.log(`⏭ Уже отправляли: ${bin_iin} (${createdLocal}) — пропускаем`);
+    if (alreadySent(bin_iin, sentClients)) {
+      console.log(`⏭ Уже отправляли: ${bin_iin} — пропускаем`);
       skippedCount++;
       continue;
     }

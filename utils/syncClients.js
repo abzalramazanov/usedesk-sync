@@ -4,12 +4,33 @@ const path = require('path');
 const { GoogleSpreadsheet } = require('google-spreadsheet');
 const creds = require('../credentials.json');
 
-// 🔧 Настройки
+// 📁 Пути
 const TIMESTAMP_FILE = path.join(__dirname, '..', 'last_timestamp.txt');
-const DEFAULT_TIMESTAMP = 1748512200000; // 2025-05-29 12:30:00 Asia/Almaty
+const LOCK_FILE = path.join(__dirname, '..', 'sync.lock');
+const SENT_LOG_FILE = path.join(__dirname, '..', 'sent_clients.json');
+
+// 🧱 Настройки
+const DEFAULT_TIMESTAMP = 1748512200000;
 const SHEET_ID = '1VNxBh-zd5r8livxK--rjgPk-E0o_fBtZQALqRKoYiY0';
 
-async function getLastTimestamp() {
+// 💤 Задержка
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// 🔐 Блокировка
+function isLocked() {
+  return fs.existsSync(LOCK_FILE);
+}
+function lock() {
+  fs.writeFileSync(LOCK_FILE, 'locked');
+}
+function unlock() {
+  if (fs.existsSync(LOCK_FILE)) fs.unlinkSync(LOCK_FILE);
+}
+
+// 🕒 Работа с timestamp
+function getLastTimestamp() {
   try {
     if (fs.existsSync(TIMESTAMP_FILE)) {
       const ts = parseInt(fs.readFileSync(TIMESTAMP_FILE, 'utf8').trim());
@@ -24,8 +45,7 @@ async function getLastTimestamp() {
     return DEFAULT_TIMESTAMP;
   }
 }
-
-async function saveLastTimestamp(timestamp) {
+function saveLastTimestamp(timestamp) {
   try {
     fs.writeFileSync(TIMESTAMP_FILE, timestamp.toString());
     console.log(`💾 Сохранён timestamp: ${timestamp}`);
@@ -34,49 +54,78 @@ async function saveLastTimestamp(timestamp) {
   }
 }
 
+// 🧠 Работа с JSON логом
+function loadSentClients() {
+  try {
+    if (!fs.existsSync(SENT_LOG_FILE)) return [];
+    const raw = fs.readFileSync(SENT_LOG_FILE);
+    return JSON.parse(raw);
+  } catch (err) {
+    console.error('❌ Ошибка чтения sent_clients.json:', err.message);
+    return [];
+  }
+}
+function saveSentClient(bin_iin, created) {
+  try {
+    const list = loadSentClients();
+    list.push({ bin_iin, created });
+    fs.writeFileSync(SENT_LOG_FILE, JSON.stringify(list, null, 2));
+  } catch (err) {
+    console.error('❌ Ошибка записи в sent_clients.json:', err.message);
+  }
+}
+function alreadySent(bin_iin, created, sentList) {
+  return sentList.some((c) => c.bin_iin === bin_iin && c.created === created);
+}
+
+// 🚀 Главная функция
 async function syncClients() {
+  if (isLocked()) {
+    console.log('⛔ Скрипт уже выполняется. Выход.');
+    return;
+  }
+  lock();
+
   console.log('🚀 syncClients стартует...');
   console.log('🌐 USEDESK_API_URL:', process.env.USEDESK_API_URL);
   console.log('🔐 USEDESK_TOKEN:', process.env.USEDESK_TOKEN ? 'есть' : 'НЕТ');
   console.log('📄 Google Sheet ID:', SHEET_ID);
 
   const doc = new GoogleSpreadsheet(SHEET_ID);
-
   try {
     await doc.useServiceAccountAuth(creds);
     await doc.loadInfo();
     console.log(`✅ Авторизация в Google Sheets прошла → Документ: ${doc.title}`);
   } catch (err) {
     console.error('❌ Ошибка авторизации Google Sheets:', err.message);
+    unlock();
     return;
   }
 
-  const sheet = doc.sheetsByIndex[0];
   let rows = [];
-
   try {
+    const sheet = doc.sheetsByIndex[0];
     rows = await sheet.getRows();
     console.log(`📊 Загружено строк из таблицы: ${rows.length}`);
   } catch (err) {
     console.error('❌ Ошибка чтения строк:', err.message);
+    unlock();
     return;
   }
 
-  const lastTimestamp = await getLastTimestamp();
+  const lastTimestamp = getLastTimestamp();
+  const sentClients = loadSentClients();
 
   const newRows = rows.filter((row) => {
     const created = parseInt(row.created);
-    if (isNaN(created)) {
-      console.warn(`⚠️ Строка с невалидным created: ${row.created}`);
-      return false;
-    }
-    return created > lastTimestamp;
+    return !isNaN(created) && created > lastTimestamp;
   });
 
   console.log(`📌 Новых строк после ${lastTimestamp}: ${newRows.length}`);
 
   if (newRows.length === 0) {
     console.log('ℹ️ Новых клиентов нет — выходим.');
+    unlock();
     return;
   }
 
@@ -86,11 +135,18 @@ async function syncClients() {
 
   for (const row of newRows) {
     const phone = String(row.phone_number || '').replace(/\D/g, '');
-    const name = 'ИИН ' + (row.bin_iin || '');
+    const bin_iin = row.bin_iin || '';
+    const name = 'ИИН ' + bin_iin;
     const created = parseInt(row.created);
 
-    if (!phone || !row.bin_iin || isNaN(created)) {
-      console.warn(`⚠️ Пропущена строка. phone: ${phone}, bin_iin: ${row.bin_iin}, created: ${row.created}`);
+    if (!phone || !bin_iin || isNaN(created)) {
+      console.warn(`⚠️ Пропущена строка. phone: ${phone}, bin_iin: ${bin_iin}, created: ${row.created}`);
+      skippedCount++;
+      continue;
+    }
+
+    if (alreadySent(bin_iin, created, sentClients)) {
+      console.log(`⏭ Уже отправляли: ${bin_iin} (${created}) — пропускаем`);
       skippedCount++;
       continue;
     }
@@ -106,6 +162,8 @@ async function syncClients() {
 
       const clientId = response.data.client_id || '❓ unknown';
       console.log(`✅ Клиент создан → client_id: ${clientId}`);
+
+      await sleep(1000); // Пауза
 
       try {
         const ticketResp = await axios.post('https://api.usedesk.ru/create/ticket', {
@@ -123,10 +181,9 @@ async function syncClients() {
         console.error(`❌ Ошибка отправки тикета client_id=${clientId}:`, err.response?.data || err.message);
       }
 
+      saveSentClient(bin_iin, created);
       createdCount++;
-      if (created > latestTimestamp) {
-        latestTimestamp = created;
-      }
+      if (created > latestTimestamp) latestTimestamp = created;
     } catch (err) {
       console.error(`❌ Ошибка создания клиента (${name}):`, err.response?.data || err.message);
       skippedCount++;
@@ -134,12 +191,8 @@ async function syncClients() {
   }
 
   console.log(`📈 Готово. Создано: ${createdCount}, Пропущено: ${skippedCount}`);
-
-  if (createdCount > 0) {
-    await saveLastTimestamp(latestTimestamp);
-  } else {
-    console.log('ℹ️ timestamp не обновлён — новых клиентов не создано.');
-  }
+  saveLastTimestamp(latestTimestamp);
+  unlock();
 }
 
 syncClients();

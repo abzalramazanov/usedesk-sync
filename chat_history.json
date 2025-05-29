@@ -1,2 +1,0 @@
-touch chat_history.json
-echo "{}" > chat_history.json

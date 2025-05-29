@@ -9,7 +9,7 @@ const LOCK_FILE = path.join(__dirname, '..', 'sync.lock');
 const SENT_LOG_FILE = path.join(__dirname, '..', 'sent_clients.json');
 
 // 🧱 Настройки
-const DEFAULT_LOCAL = '2025-05-29 13:00:00';
+const DEFAULT_LOCAL = '2025-05-29 15:45:00';
 const SHEET_ID = '1VNxBh-zd5r8livxK--rjgPk-E0o_fBtZQALqRKoYiY0';
 
 // 💤 Пауза

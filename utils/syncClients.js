@@ -5,15 +5,15 @@ const { GoogleSpreadsheet } = require('google-spreadsheet');
 const creds = require('../credentials.json');
 
 // 📁 Пути
-const TIMESTAMP_FILE = path.join(__dirname, '..', 'last_timestamp.txt');
+const LAST_LOCAL_FILE = path.join(__dirname, '..', 'last_local.txt');
 const LOCK_FILE = path.join(__dirname, '..', 'sync.lock');
 const SENT_LOG_FILE = path.join(__dirname, '..', 'sent_clients.json');
 
 // 🧱 Настройки
-const DEFAULT_TIMESTAMP = 1748512200000;
+const DEFAULT_LOCAL = '2025-05-29 13:00:00';
 const SHEET_ID = '1VNxBh-zd5r8livxK--rjgPk-E0o_fBtZQALqRKoYiY0';
 
-// 💤 Задержка
+// 💤 Пауза
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -29,32 +29,32 @@ function unlock() {
   if (fs.existsSync(LOCK_FILE)) fs.unlinkSync(LOCK_FILE);
 }
 
-// 🕒 Работа с timestamp
-function getLastTimestamp() {
+// 📅 Чтение/запись created_local
+function getLastLocal() {
   try {
-    if (fs.existsSync(TIMESTAMP_FILE)) {
-      const ts = parseInt(fs.readFileSync(TIMESTAMP_FILE, 'utf8').trim());
-      console.log(`🕒 Прочитан timestamp из файла: ${ts}`);
+    if (fs.existsSync(LAST_LOCAL_FILE)) {
+      const ts = fs.readFileSync(LAST_LOCAL_FILE, 'utf8').trim();
+      console.log(`🕒 Прочитан created_local из файла: ${ts}`);
       return ts;
     } else {
-      console.log(`📁 Файл timestamp не найден. Используем default: ${DEFAULT_TIMESTAMP}`);
-      return DEFAULT_TIMESTAMP;
+      console.log(`📁 Файл last_local.txt не найден. Используем default: ${DEFAULT_LOCAL}`);
+      return DEFAULT_LOCAL;
     }
   } catch (err) {
-    console.error('❌ Ошибка чтения timestamp:', err.message);
-    return DEFAULT_TIMESTAMP;
+    console.error('❌ Ошибка чтения last_local.txt:', err.message);
+    return DEFAULT_LOCAL;
   }
 }
-function saveLastTimestamp(timestamp) {
+function saveLastLocal(timestampStr) {
   try {
-    fs.writeFileSync(TIMESTAMP_FILE, timestamp.toString());
-    console.log(`💾 Сохранён timestamp: ${timestamp}`);
+    fs.writeFileSync(LAST_LOCAL_FILE, timestampStr);
+    console.log(`💾 Сохранён created_local: ${timestampStr}`);
   } catch (err) {
-    console.error('❌ Ошибка записи timestamp:', err.message);
+    console.error('❌ Ошибка записи last_local.txt:', err.message);
   }
 }
 
-// 🧠 Работа с JSON логом
+// 🧠 Работа с sent_clients.json
 function loadSentClients() {
   try {
     if (!fs.existsSync(SENT_LOG_FILE)) return [];
@@ -65,17 +65,17 @@ function loadSentClients() {
     return [];
   }
 }
-function saveSentClient(bin_iin, created) {
+function saveSentClient(bin_iin, created_local) {
   try {
     const list = loadSentClients();
-    list.push({ bin_iin, created });
+    list.push({ bin_iin, created_local });
     fs.writeFileSync(SENT_LOG_FILE, JSON.stringify(list, null, 2));
   } catch (err) {
     console.error('❌ Ошибка записи в sent_clients.json:', err.message);
   }
 }
-function alreadySent(bin_iin, created, sentList) {
-  return sentList.some((c) => c.bin_iin === bin_iin && c.created === created);
+function alreadySent(bin_iin, created_local, sentList) {
+  return sentList.some(c => c.bin_iin === bin_iin && c.created_local === created_local);
 }
 
 // 🚀 Главная функция
@@ -113,15 +113,15 @@ async function syncClients() {
     return;
   }
 
-  const lastTimestamp = getLastTimestamp();
+  const lastLocal = getLastLocal();
   const sentClients = loadSentClients();
 
   const newRows = rows.filter((row) => {
-    const created = parseInt(row.created);
-    return !isNaN(created) && created > lastTimestamp;
+    const createdLocal = row.created_local?.trim();
+    return createdLocal && createdLocal > lastLocal;
   });
 
-  console.log(`📌 Новых строк после ${lastTimestamp}: ${newRows.length}`);
+  console.log(`📌 Новых строк после ${lastLocal}: ${newRows.length}`);
 
   if (newRows.length === 0) {
     console.log('ℹ️ Новых клиентов нет — выходим.');
@@ -131,22 +131,22 @@ async function syncClients() {
 
   let createdCount = 0;
   let skippedCount = 0;
-  let latestTimestamp = lastTimestamp;
+  let latestLocal = lastLocal;
 
   for (const row of newRows) {
     const phone = String(row.phone_number || '').replace(/\D/g, '');
     const bin_iin = row.bin_iin || '';
     const name = 'ИИН ' + bin_iin;
-    const created = parseInt(row.created);
+    const createdLocal = row.created_local?.trim();
 
-    if (!phone || !bin_iin || isNaN(created)) {
-      console.warn(`⚠️ Пропущена строка. phone: ${phone}, bin_iin: ${bin_iin}, created: ${row.created}`);
+    if (!phone || !bin_iin || !createdLocal) {
+      console.warn(`⚠️ Пропущена строка. phone: ${phone}, bin_iin: ${bin_iin}, created_local: ${createdLocal}`);
       skippedCount++;
       continue;
     }
 
-    if (alreadySent(bin_iin, created, sentClients)) {
-      console.log(`⏭ Уже отправляли: ${bin_iin} (${created}) — пропускаем`);
+    if (alreadySent(bin_iin, createdLocal, sentClients)) {
+      console.log(`⏭ Уже отправляли: ${bin_iin} (${createdLocal}) — пропускаем`);
       skippedCount++;
       continue;
     }
@@ -163,7 +163,7 @@ async function syncClients() {
       const clientId = response.data.client_id || '❓ unknown';
       console.log(`✅ Клиент создан → client_id: ${clientId}`);
 
-      await sleep(1000); // Пауза
+      await sleep(1000); // ⏱ Пауза перед тикетом
 
       try {
         const ticketResp = await axios.post('https://api.usedesk.ru/create/ticket', {
@@ -181,9 +181,9 @@ async function syncClients() {
         console.error(`❌ Ошибка отправки тикета client_id=${clientId}:`, err.response?.data || err.message);
       }
 
-      saveSentClient(bin_iin, created);
+      saveSentClient(bin_iin, createdLocal);
       createdCount++;
-      if (created > latestTimestamp) latestTimestamp = created;
+      if (createdLocal > latestLocal) latestLocal = createdLocal;
     } catch (err) {
       console.error(`❌ Ошибка создания клиента (${name}):`, err.response?.data || err.message);
       skippedCount++;
@@ -191,7 +191,7 @@ async function syncClients() {
   }
 
   console.log(`📈 Готово. Создано: ${createdCount}, Пропущено: ${skippedCount}`);
-  saveLastTimestamp(latestTimestamp);
+  saveLastLocal(latestLocal);
   unlock();
 }
 

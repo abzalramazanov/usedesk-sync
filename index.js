@@ -1,5 +1,6 @@
 require('dotenv').config();
-const { syncClients } = require('./utils/syncClients');
+const path = require('path');
+const { syncClients } = require(path.join(__dirname, 'utils', 'syncClients'));
 
 const express = require('express');
 const app = express();

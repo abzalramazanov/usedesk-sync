@@ -28,7 +28,7 @@ function unlock() {
   if (fs.existsSync(LOCK_FILE)) fs.unlinkSync(LOCK_FILE);
 }
 
-// 📛 Функция извлечения имени и отчества из full_name
+// 📛 Имя и отчество
 function extractPositionName(fullName) {
   if (!fullName) return '';
   const cleaned = fullName.replace(/ИП\s*/i, '').trim();
@@ -41,13 +41,13 @@ function extractPositionName(fullName) {
   return cleaned;
 }
 
-// 🧠 Работа с sent_clients.json
+// 📦 Работа с логом
 function loadSentClients() {
   try {
     if (!fs.existsSync(SENT_LOG_FILE)) return [];
     const raw = fs.readFileSync(SENT_LOG_FILE);
     return JSON.parse(raw);
-  } catch (err) {
+  } catch {
     return [];
   }
 }
@@ -64,7 +64,7 @@ function alreadySent(bin_iin, sentList) {
   return sentList.some(c => c.bin_iin === bin_iin);
 }
 
-// 📅 Чтение даты из Google Sheets
+// 📅 Работа с датой
 async function getLastLocal(doc) {
   try {
     const metaSheet = doc.sheetsByTitle['Meta'];
@@ -93,7 +93,7 @@ async function saveLastLocal(doc, timestampStr) {
   } catch {}
 }
 
-// 🚀 Главная функция
+// 🚀 Основной процесс
 async function syncClients() {
   if (isLocked()) return;
   lock();
@@ -163,7 +163,7 @@ async function syncClients() {
       });
 
       const clientId = response.data.client_id || '';
-      await sleep(1000);
+      await sleep(2000); // ← пауза перед созданием тикета
 
       try {
         const ticketResp = await axios.post('https://api.usedesk.ru/create/ticket', {
@@ -176,13 +176,16 @@ async function syncClients() {
           client_id: clientId,
         });
 
-        console.log('🎯 Ответ от UseDesk:', ticketResp.data);
-      } catch {}
+        console.log(`🎯 Ответ от UseDesk: ${JSON.stringify(ticketResp.data)}`);
+      } catch (err) {
+        console.log('❌ Ошибка при создании тикета:', err.message);
+      }
 
       saveSentClient(bin_iin, createdLocal);
       latestLocal = createdLocal;
       createdCount++;
-    } catch {
+    } catch (err) {
+      console.log('❌ Ошибка при создании клиента:', err.message);
       skippedCount++;
     }
   }

@@ -195,7 +195,7 @@ async function syncClients() {
         api_token: process.env.USEDESK_TOKEN,
         phone,
         name,
-        position // 👈 добавлено имя и отчество в поле должности
+        position
       });
 
       const clientId = response.data.client_id || '❓ unknown';
@@ -214,6 +214,7 @@ async function syncClients() {
           client_id: clientId,
         });
 
+        console.log('🎯 Ответ от UseDesk:', ticketResp.data);
         console.log(`💬 Тикет отправлен → статус ${ticketResp.status}`);
       } catch (err) {
         console.error(`❌ Ошибка отправки тикета client_id=${clientId}:`, err.response?.data || err.message);

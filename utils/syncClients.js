@@ -4,20 +4,15 @@ const path = require('path');
 const { GoogleSpreadsheet } = require('google-spreadsheet');
 const creds = require('../credentials.json');
 
-// 📁 Пути
 const LOCK_FILE = path.join(__dirname, '..', 'sync.lock');
 const SENT_LOG_FILE = path.join(__dirname, '..', 'sent_clients.json');
-
-// 🧱 Настройки
 const DEFAULT_LOCAL = '2025-05-29 15:45:00';
 const SHEET_ID = '1VNxBh-zd5r8livxK--rjgPk-E0o_fBtZQALqRKoYiY0';
 
-// 💤 Пауза
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// 🔐 Блокировка
 function isLocked() {
   return fs.existsSync(LOCK_FILE);
 }
@@ -28,7 +23,6 @@ function unlock() {
   if (fs.existsSync(LOCK_FILE)) fs.unlinkSync(LOCK_FILE);
 }
 
-// 📛 Имя и отчество
 function extractPositionName(fullName) {
   if (!fullName) return '';
   const cleaned = fullName.replace(/ИП\s*/i, '').trim();
@@ -41,7 +35,6 @@ function extractPositionName(fullName) {
   return cleaned;
 }
 
-// 📦 Работа с логом
 function loadSentClients() {
   try {
     if (!fs.existsSync(SENT_LOG_FILE)) return [];
@@ -64,16 +57,13 @@ function alreadySent(bin_iin, sentList) {
   return sentList.some(c => c.bin_iin === bin_iin);
 }
 
-// 📅 Работа с датой
 async function getLastLocal(doc) {
   try {
     const metaSheet = doc.sheetsByTitle['Meta'];
     if (!metaSheet) return DEFAULT_LOCAL;
-
     await metaSheet.loadCells('A1');
     const cell = metaSheet.getCell(0, 0);
     const value = cell.value?.toString().trim();
-
     if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value)) return DEFAULT_LOCAL;
     return value;
   } catch {
@@ -85,7 +75,6 @@ async function saveLastLocal(doc, timestampStr) {
   try {
     let metaSheet = doc.sheetsByTitle['Meta'];
     if (!metaSheet) metaSheet = await doc.addSheet({ title: 'Meta', headerValues: [] });
-
     await metaSheet.loadCells('A1');
     const cell = metaSheet.getCell(0, 0);
     cell.value = timestampStr;
@@ -93,7 +82,6 @@ async function saveLastLocal(doc, timestampStr) {
   } catch {}
 }
 
-// 🚀 Основной процесс
 async function syncClients() {
   if (isLocked()) return;
   lock();
@@ -118,23 +106,13 @@ async function syncClients() {
 
   const lastLocal = await getLastLocal(doc);
   const sentClients = loadSentClients();
-
-  const newRows = rows.filter((row) => {
-    const createdLocal = row.created_local?.trim();
-    return createdLocal && createdLocal > lastLocal;
-  });
-
+  const newRows = rows.filter((row) => row.created_local?.trim() > lastLocal);
   console.log(`📌 Новых строк после ${lastLocal}: ${newRows.length}`);
-
   if (newRows.length === 0) {
     console.log('ℹ️ Новых клиентов нет — выходим.');
     unlock();
     return;
   }
-
-  let createdCount = 0;
-  let skippedCount = 0;
-  let latestLocal = null;
 
   for (const row of newRows) {
     const phone = String(row.phone_number || '').replace(/\D/g, '');
@@ -144,53 +122,68 @@ async function syncClients() {
     const fullName = row.full_name || '';
     const position = extractPositionName(fullName);
 
-    if (!phone || !bin_iin || !createdLocal) {
-      skippedCount++;
-      continue;
-    }
-
-    if (alreadySent(bin_iin, sentClients)) {
-      skippedCount++;
-      continue;
-    }
+    if (!phone || !bin_iin || !createdLocal || alreadySent(bin_iin, sentClients)) continue;
 
     try {
-      const response = await axios.post(process.env.USEDESK_API_URL, {
+      const clientResp = await axios.post(process.env.USEDESK_API_URL, {
         api_token: process.env.USEDESK_TOKEN,
         phone,
         name,
         position
       });
+      const clientId = clientResp.data.client_id || '';
+      await sleep(2000);
 
-      const clientId = response.data.client_id || '';
-      await sleep(2000); // ← пауза перед созданием тикета
+      const ticketResp = await axios.post('https://api.usedesk.ru/create/ticket', {
+        api_token: process.env.USEDESK_TOKEN,
+        tag: 'OscarSigmaRegistration',
+        message: 'new registration :D',
+        subject: 'OscarSigmaRegistration',
+        channel_id: '63818',
+        from: 'client',
+        client_id: clientId
+      });
 
-      try {
-        const ticketResp = await axios.post('https://api.usedesk.ru/create/ticket', {
+      const data = ticketResp.data;
+      if (data.message_status === 'delivered') {
+        console.log(`✅ Ticket id: ${data.ticket_id} доставлен.`);
+      } else if (data.message_status === 'not delivered') {
+        console.log(`⚠️ Ticket id: ${data.ticket_id} не доставлен.`);
+        const updateResp = await axios.post('https://api.usedesk.ru/update/ticket', {
           api_token: process.env.USEDESK_TOKEN,
-          tag: 'OscarSigmaRegistration',
-          message: 'new registration :D',
-          subject: 'OscarSigmaRegistration',
-          channel_id: '63818',
-          from: 'client',
-          client_id: clientId,
+          ticket_id: data.ticket_id,
+          status: 4
         });
 
-        console.log(`🎯 Ответ от UseDesk: ${JSON.stringify(ticketResp.data)}`);
-      } catch (err) {
-        console.log('❌ Ошибка при создании тикета:', err.message);
+        if (updateResp.data.status === 'success') {
+          console.log(`Ticket id: ${data.ticket_id} Удалён.`);
+
+          await sleep(2000);
+          const retryResp = await axios.post('https://api.usedesk.ru/create/ticket', {
+            api_token: process.env.USEDESK_TOKEN,
+            tag: 'OscarSigmaRegistration',
+            message: 'new registration :D',
+            subject: 'OscarSigmaRegistration',
+            channel_id: '63818',
+            from: 'client',
+            client_id: clientId
+          });
+
+          if (retryResp.data.message_status === 'delivered') {
+            console.log(`✅ Новый тикет доставлен (id: ${retryResp.data.ticket_id}).`);
+          } else {
+            console.log(`⚠️ Новый тикет снова не доставлен (id: ${retryResp.data.ticket_id}).`);
+          }
+        }
       }
 
       saveSentClient(bin_iin, createdLocal);
-      latestLocal = createdLocal;
-      createdCount++;
+      await saveLastLocal(doc, createdLocal);
     } catch (err) {
-      console.log('❌ Ошибка при создании клиента:', err.message);
-      skippedCount++;
+      console.log('❌ Ошибка:', err.message);
     }
   }
 
-  if (latestLocal) await saveLastLocal(doc, latestLocal);
   unlock();
 }
 

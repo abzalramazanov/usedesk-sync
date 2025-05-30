@@ -48,7 +48,6 @@ function loadSentClients() {
     const raw = fs.readFileSync(SENT_LOG_FILE);
     return JSON.parse(raw);
   } catch (err) {
-    console.error('❌ Ошибка чтения sent_clients.json:', err.message);
     return [];
   }
 }
@@ -58,9 +57,7 @@ function saveSentClient(bin_iin, created_local) {
     const list = loadSentClients();
     list.push({ bin_iin, created_local });
     fs.writeFileSync(SENT_LOG_FILE, JSON.stringify(list, null, 2));
-  } catch (err) {
-    console.error('❌ Ошибка записи в sent_clients.json:', err.message);
-  }
+  } catch {}
 }
 
 function alreadySent(bin_iin, sentList) {
@@ -71,24 +68,15 @@ function alreadySent(bin_iin, sentList) {
 async function getLastLocal(doc) {
   try {
     const metaSheet = doc.sheetsByTitle['Meta'];
-    if (!metaSheet) {
-      console.warn('⚠️ Лист Meta не найден. Используем default дату:', DEFAULT_LOCAL);
-      return DEFAULT_LOCAL;
-    }
+    if (!metaSheet) return DEFAULT_LOCAL;
 
     await metaSheet.loadCells('A1');
     const cell = metaSheet.getCell(0, 0);
     const value = cell.value?.toString().trim();
 
-    if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value)) {
-      console.warn(`⚠️ Невалидная дата в Meta! A1: "${value}" → откатываем на default`);
-      return DEFAULT_LOCAL;
-    }
-
-    console.log(`🕒 Прочитан created_local из Google Sheets: ${value}`);
+    if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value)) return DEFAULT_LOCAL;
     return value;
-  } catch (err) {
-    console.error('❌ Ошибка чтения даты из Meta:', err.message);
+  } catch {
     return DEFAULT_LOCAL;
   }
 }
@@ -96,43 +84,25 @@ async function getLastLocal(doc) {
 async function saveLastLocal(doc, timestampStr) {
   try {
     let metaSheet = doc.sheetsByTitle['Meta'];
-
-    if (!metaSheet) {
-      console.warn('⚠️ Лист Meta не найден. Создаём...');
-      metaSheet = await doc.addSheet({ title: 'Meta', headerValues: [] });
-    }
+    if (!metaSheet) metaSheet = await doc.addSheet({ title: 'Meta', headerValues: [] });
 
     await metaSheet.loadCells('A1');
     const cell = metaSheet.getCell(0, 0);
     cell.value = timestampStr;
     await metaSheet.saveUpdatedCells();
-
-    console.log(`💾 Сохранён created_local в Google Sheets: ${timestampStr}`);
-  } catch (err) {
-    console.error('❌ Ошибка записи даты в Meta:', err.message);
-  }
+  } catch {}
 }
 
 // 🚀 Главная функция
 async function syncClients() {
-  if (isLocked()) {
-    console.log('⛔ Скрипт уже выполняется. Выход.');
-    return;
-  }
+  if (isLocked()) return;
   lock();
-
-  console.log('🚀 syncClients стартует...');
-  console.log('🌐 USEDESK_API_URL:', process.env.USEDESK_API_URL);
-  console.log('🔐 USEDESK_TOKEN:', process.env.USEDESK_TOKEN ? 'есть' : 'НЕТ');
-  console.log('📄 Google Sheet ID:', SHEET_ID);
 
   const doc = new GoogleSpreadsheet(SHEET_ID);
   try {
     await doc.useServiceAccountAuth(creds);
     await doc.loadInfo();
-    console.log(`✅ Авторизация в Google Sheets прошла → Документ: ${doc.title}`);
-  } catch (err) {
-    console.error('❌ Ошибка авторизации Google Sheets:', err.message);
+  } catch {
     unlock();
     return;
   }
@@ -141,9 +111,7 @@ async function syncClients() {
   try {
     const sheet = doc.sheetsByIndex[0];
     rows = await sheet.getRows();
-    console.log(`📊 Загружено строк из таблицы: ${rows.length}`);
-  } catch (err) {
-    console.error('❌ Ошибка чтения строк:', err.message);
+  } catch {
     unlock();
     return;
   }
@@ -177,18 +145,14 @@ async function syncClients() {
     const position = extractPositionName(fullName);
 
     if (!phone || !bin_iin || !createdLocal) {
-      console.warn(`⚠️ Пропущена строка. phone: ${phone}, bin_iin: ${bin_iin}, created_local: ${createdLocal}`);
       skippedCount++;
       continue;
     }
 
     if (alreadySent(bin_iin, sentClients)) {
-      console.log(`⏭ Уже отправляли: ${bin_iin} — пропускаем`);
       skippedCount++;
       continue;
     }
-
-    console.log(`📤 Пытаемся создать клиента: ${name}, ${phone}`);
 
     try {
       const response = await axios.post(process.env.USEDESK_API_URL, {
@@ -198,9 +162,7 @@ async function syncClients() {
         position
       });
 
-      const clientId = response.data.client_id || '❓ unknown';
-      console.log(`✅ Клиент создан → client_id: ${clientId}`);
-
+      const clientId = response.data.client_id || '';
       await sleep(1000);
 
       try {
@@ -215,21 +177,16 @@ async function syncClients() {
         });
 
         console.log('🎯 Ответ от UseDesk:', ticketResp.data);
-        console.log(`💬 Тикет отправлен → статус ${ticketResp.status}`);
-      } catch (err) {
-        console.error(`❌ Ошибка отправки тикета client_id=${clientId}:`, err.response?.data || err.message);
-      }
+      } catch {}
 
       saveSentClient(bin_iin, createdLocal);
       latestLocal = createdLocal;
       createdCount++;
-    } catch (err) {
-      console.error(`❌ Ошибка создания клиента (${name}):`, err.response?.data || err.message);
+    } catch {
       skippedCount++;
     }
   }
 
-  console.log(`📈 Готово. Создано: ${createdCount}, Пропущено: ${skippedCount}`);
   if (latestLocal) await saveLastLocal(doc, latestLocal);
   unlock();
 }

@@ -1,18 +1,22 @@
+// 📦 Импорты
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const { GoogleSpreadsheet } = require('google-spreadsheet');
 const creds = require('../credentials.json');
 
+// 📁 Пути
 const LOCK_FILE = path.join(__dirname, '..', 'sync.lock');
 const SENT_LOG_FILE = path.join(__dirname, '..', 'sent_clients.json');
 const DEFAULT_LOCAL = '2025-05-29 15:45:00';
 const SHEET_ID = '1VNxBh-zd5r8livxK--rjgPk-E0o_fBtZQALqRKoYiY0';
 
+// 💤 Пауза
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// 🔐 Блокировка
 function isLocked() {
   return fs.existsSync(LOCK_FILE);
 }
@@ -23,6 +27,7 @@ function unlock() {
   if (fs.existsSync(LOCK_FILE)) fs.unlinkSync(LOCK_FILE);
 }
 
+// 🧠 Обработка имени
 function extractPositionName(fullName) {
   if (!fullName) return '';
   const cleaned = fullName.replace(/ИП\s*/i, '').trim();
@@ -35,6 +40,7 @@ function extractPositionName(fullName) {
   return cleaned;
 }
 
+// 📜 Работа с логами
 function loadSentClients() {
   try {
     if (!fs.existsSync(SENT_LOG_FILE)) return [];
@@ -57,6 +63,7 @@ function alreadySent(bin_iin, sentList) {
   return sentList.some(c => c.bin_iin === bin_iin);
 }
 
+// 📅 Работа с датой в Meta
 async function getLastLocal(doc) {
   try {
     const metaSheet = doc.sheetsByTitle['Meta'];
@@ -82,6 +89,7 @@ async function saveLastLocal(doc, timestampStr) {
   } catch {}
 }
 
+// 🚀 Основной запуск
 async function syncClients() {
   if (isLocked()) return;
   lock();
@@ -116,6 +124,7 @@ async function syncClients() {
 
   for (const row of newRows) {
     const phone = String(row.phone_number || '').replace(/\D/g, '');
+    const shortPhone = phone.startsWith('7') ? phone.slice(1) : phone;
     const bin_iin = row.bin_iin || '';
     const name = 'ИИН ' + bin_iin;
     const createdLocal = row.created_local?.trim();
@@ -124,16 +133,29 @@ async function syncClients() {
 
     if (!phone || !bin_iin || !createdLocal || alreadySent(bin_iin, sentClients)) continue;
 
+    let clientId = '';
     try {
-      const clientResp = await axios.post(process.env.USEDESK_API_URL, {
+      const searchResp = await axios.post('https://api.usedesk.ru/clients', {
         api_token: process.env.USEDESK_TOKEN,
-        phone,
-        name,
-        position
+        query: shortPhone,
+        search_type: 'partial_match'
       });
-      const clientId = clientResp.data.client_id || '';
-      await sleep(2000);
 
+      if (Array.isArray(searchResp.data) && searchResp.data.length > 0) {
+        clientId = searchResp.data[0].id;
+        console.log(`🔎 Клиент найден: id ${clientId}, не создаём заново.`);
+      } else {
+        const clientResp = await axios.post(process.env.USEDESK_API_URL, {
+          api_token: process.env.USEDESK_TOKEN,
+          phone,
+          name,
+          position
+        });
+        clientId = clientResp.data.client_id || '';
+        console.log(`🆕 Клиент создан: id ${clientId}`);
+      }
+
+      await sleep(2000);
       const ticketResp = await axios.post('https://api.usedesk.ru/create/ticket', {
         api_token: process.env.USEDESK_TOKEN,
         tag: 'OscarSigmaRegistration',
@@ -156,8 +178,7 @@ async function syncClients() {
         });
 
         if (updateResp.data.status === 'success') {
-          console.log(`Ticket id: ${data.ticket_id} Удалён.`);
-
+          console.log(`Ticket id: ${data.ticket_id} удалён.`);
           await sleep(2000);
           const retryResp = await axios.post('https://api.usedesk.ru/create/ticket', {
             api_token: process.env.USEDESK_TOKEN,

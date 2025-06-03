@@ -143,7 +143,15 @@ async function syncClients() {
 
       if (Array.isArray(searchResp.data) && searchResp.data.length > 0) {
         clientId = searchResp.data[0].id;
-        console.log(`🔎 Клиент найден: id ${clientId}, не создаём заново.`);
+        console.log(`🔎 Клиент найден: id ${clientId}, обновляем данные.`);
+
+        await axios.post('https://api.usedesk.ru/update/client', {
+          api_token: process.env.USEDESK_TOKEN,
+          client_id: clientId,
+          phone,
+          name,
+          position
+        });
       } else {
         const clientResp = await axios.post(process.env.USEDESK_API_URL, {
           api_token: process.env.USEDESK_TOKEN,

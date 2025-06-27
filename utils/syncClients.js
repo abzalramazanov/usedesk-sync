@@ -134,6 +134,7 @@ async function syncClients() {
     if (!phone || !bin_iin || !createdLocal || alreadySent(bin_iin, sentClients)) continue;
 
     let clientId = '';
+    let tickets = [];
     try {
       const searchResp = await axios.post('https://api.usedesk.ru/clients', {
         api_token: process.env.USEDESK_TOKEN,
@@ -142,8 +143,9 @@ async function syncClients() {
       });
 
       if (Array.isArray(searchResp.data) && searchResp.data.length > 0) {
-        clientId = searchResp.data[0].id;
-        console.log(`🔎 Клиент найден: id ${clientId}, обновляем данные.`);
+        const client = searchResp.data[0];
+        clientId = client.id;
+        tickets = client.tickets || [];
 
         await axios.post('https://api.usedesk.ru/update/client', {
           api_token: process.env.USEDESK_TOKEN,
@@ -152,6 +154,7 @@ async function syncClients() {
           name,
           position
         });
+        console.log(`🔄 Клиент обновлён: id ${clientId}`);
       } else {
         const clientResp = await axios.post(process.env.USEDESK_API_URL, {
           api_token: process.env.USEDESK_TOKEN,
@@ -164,29 +167,50 @@ async function syncClients() {
       }
 
       await sleep(2000);
-      const ticketResp = await axios.post('https://api.usedesk.ru/create/ticket', {
-        api_token: process.env.USEDESK_TOKEN,
-        tag: 'OscarSigmaRegistration',
-        message: 'new registration :D',
-        subject: 'OscarSigmaRegistration',
-        channel_id: '63818',
-        from: 'client',
-        client_id: clientId
-      });
 
-      const data = ticketResp.data;
-      if (data.message_status === 'delivered') {
-        console.log(`✅ Ticket id: ${data.ticket_id} доставлен.`);
-      } else if (data.message_status === 'not delivered') {
-        console.log(`⚠️ Ticket id: ${data.ticket_id} не доставлен.`);
-        const updateResp = await axios.post('https://api.usedesk.ru/update/ticket', {
+      let sendNewTicket = true;
+      if (tickets.length > 0) {
+        const latestTicketId = Math.max(...tickets);
+        const ticketStatusResp = await axios.post('https://api.usedesk.ru/ticket', {
           api_token: process.env.USEDESK_TOKEN,
-          ticket_id: data.ticket_id,
-          status: 4
+          ticket_id: latestTicketId
         });
 
-        if (updateResp.data.status === 'success') {
-          console.log(`Ticket id: ${data.ticket_id} удалён.`);
+        const status = ticketStatusResp.data.status;
+        if (status !== 3) {
+          console.log(`📎 Обновляем открытый тикет ${latestTicketId}`);
+          await axios.post('https://api.usedesk.ru/create/comment', {
+            api_token: process.env.USEDESK_TOKEN,
+            ticket_id: latestTicketId,
+            message: 'new registration :D',
+            type: 'client'
+          });
+          sendNewTicket = false;
+        }
+      }
+
+      if (sendNewTicket) {
+        const ticketResp = await axios.post('https://api.usedesk.ru/create/ticket', {
+          api_token: process.env.USEDESK_TOKEN,
+          tag: 'OscarSigmaRegistration',
+          message: 'new registration :D',
+          subject: 'OscarSigmaRegistration',
+          channel_id: '63818',
+          from: 'client',
+          client_id: clientId
+        });
+
+        const data = ticketResp.data;
+        if (data.message_status === 'delivered') {
+          console.log(`✅ Новый тикет доставлен: ${data.ticket_id}`);
+        } else {
+          console.log(`⚠️ Новый тикет не доставлен, пытаемся ещё раз...`);
+          await axios.post('https://api.usedesk.ru/update/ticket', {
+            api_token: process.env.USEDESK_TOKEN,
+            ticket_id: data.ticket_id,
+            status: 4
+          });
+
           await sleep(2000);
           const retryResp = await axios.post('https://api.usedesk.ru/create/ticket', {
             api_token: process.env.USEDESK_TOKEN,
@@ -199,9 +223,9 @@ async function syncClients() {
           });
 
           if (retryResp.data.message_status === 'delivered') {
-            console.log(`✅ Новый тикет доставлен (id: ${retryResp.data.ticket_id}).`);
+            console.log(`✅ Повторный тикет доставлен: ${retryResp.data.ticket_id}`);
           } else {
-            console.log(`⚠️ Новый тикет снова не доставлен (id: ${retryResp.data.ticket_id}).`);
+            console.log(`❌ И повторный тикет не доставлен.`);
           }
         }
       }

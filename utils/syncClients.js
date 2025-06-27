@@ -181,12 +181,22 @@ async function syncClients() {
 
         if (status !== 3) {
           console.log(`📎 Обновляем открытый тикет ${latestTicketId}`);
+
+          await axios.post('https://api.usedesk.ru/update/ticket', {
+            api_token: process.env.USEDESK_TOKEN,
+            ticket_id: latestTicketId,
+            subject: 'OscarSigmaRegistration',
+            tag: 'OscarSigmaRegistration'
+          });
+
           await axios.post('https://api.usedesk.ru/create/comment', {
             api_token: process.env.USEDESK_TOKEN,
             ticket_id: latestTicketId,
-            message: 'new registration :D',
-            type: 'client'
+            message: 'OscarSigmaRegistration',
+            type: 'public',
+            from: 'client'
           });
+
           sendNewTicket = false;
         }
       }

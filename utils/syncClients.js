@@ -176,7 +176,9 @@ async function syncClients() {
           ticket_id: latestTicketId
         });
 
-        const status = ticketStatusResp.data.status;
+        const status = ticketStatusResp.data.ticket.status_id;
+        console.log(`🎯 Последний тикет ${latestTicketId} статус: ${status}`);
+
         if (status !== 3) {
           console.log(`📎 Обновляем открытый тикет ${latestTicketId}`);
           await axios.post('https://api.usedesk.ru/create/comment', {

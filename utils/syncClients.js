@@ -3,7 +3,20 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const { GoogleSpreadsheet } = require('google-spreadsheet');
-const creds = require('../credentials.json');
+
+// 🔐 creds из переменных окружения
+const creds = {
+  type: "service_account",
+  project_id: "usedesk-ai",
+  private_key_id: "dummy",
+  private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+  client_email: process.env.GOOGLE_CLIENT_EMAIL,
+  client_id: "dummy",
+  auth_uri: "https://accounts.google.com/o/oauth2/auth",
+  token_uri: "https://oauth2.googleapis.com/token",
+  auth_provider_x509_cert_url: "https://www.googleapis.com/oauth2/v1/certs",
+  client_x509_cert_url: `https://www.googleapis.com/robot/v1/metadata/x509/${encodeURIComponent(process.env.GOOGLE_CLIENT_EMAIL)}`
+};
 
 // 📁 Пути
 const LOCK_FILE = path.join(__dirname, '..', 'sync.lock');
@@ -137,7 +150,7 @@ async function syncClients() {
     let tickets = [];
     try {
       const searchResp = await axios.post('https://api.usedesk.ru/clients', {
-        api_token: process.env.USEDESK_TOKEN,
+        api_token: process.env.USEDESK_API_TOKEN,
         query: shortPhone,
         search_type: 'partial_match'
       });
@@ -148,7 +161,7 @@ async function syncClients() {
         tickets = client.tickets || [];
 
         await axios.post('https://api.usedesk.ru/update/client', {
-          api_token: process.env.USEDESK_TOKEN,
+          api_token: process.env.USEDESK_API_TOKEN,
           client_id: clientId,
           phone,
           name,
@@ -156,8 +169,8 @@ async function syncClients() {
         });
         console.log(`🔄 Клиент обновлён: id ${clientId}`);
       } else {
-        const clientResp = await axios.post(process.env.USEDESK_API_URL, {
-          api_token: process.env.USEDESK_TOKEN,
+        const clientResp = await axios.post('https://api.usedesk.ru/create/client', {
+          api_token: process.env.USEDESK_API_TOKEN,
           phone,
           name,
           position
@@ -166,7 +179,7 @@ async function syncClients() {
         console.log(`🆕 Клиент создан: id ${clientId}`);
       }
 
-      // 🛑 Только для user_id 175888649
+      // 🛑 Обрабатываем только клиента 175888649
       if (clientId !== 175888649) {
         console.log(`⏭ Пропущен клиент: id ${clientId}`);
         continue;
@@ -178,7 +191,7 @@ async function syncClients() {
       if (tickets.length > 0) {
         const latestTicketId = Math.max(...tickets);
         const ticketStatusResp = await axios.post('https://api.usedesk.ru/ticket', {
-          api_token: process.env.USEDESK_TOKEN,
+          api_token: process.env.USEDESK_API_TOKEN,
           ticket_id: latestTicketId
         });
 
@@ -189,14 +202,14 @@ async function syncClients() {
           console.log(`📎 Обновляем открытый тикет ${latestTicketId}`);
 
           await axios.post('https://api.usedesk.ru/update/ticket', {
-            api_token: process.env.USEDESK_TOKEN,
+            api_token: process.env.USEDESK_API_TOKEN,
             ticket_id: latestTicketId,
             subject: 'OscarSigmaRegistration',
             tag: 'OscarSigmaRegistration'
           });
 
           await axios.post('https://api.usedesk.ru/create/comment', {
-            api_token: process.env.USEDESK_TOKEN,
+            api_token: process.env.USEDESK_API_TOKEN,
             ticket_id: latestTicketId,
             message: 'OscarSigmaRegistration',
             type: 'public',
@@ -209,7 +222,7 @@ async function syncClients() {
 
       if (sendNewTicket) {
         const ticketResp = await axios.post('https://api.usedesk.ru/create/ticket', {
-          api_token: process.env.USEDESK_TOKEN,
+          api_token: process.env.USEDESK_API_TOKEN,
           tag: 'OscarSigmaRegistration',
           message: 'new registration :D',
           subject: 'OscarSigmaRegistration',
@@ -224,14 +237,14 @@ async function syncClients() {
         } else {
           console.log(`⚠️ Новый тикет не доставлен, пытаемся ещё раз...`);
           await axios.post('https://api.usedesk.ru/update/ticket', {
-            api_token: process.env.USEDESK_TOKEN,
+            api_token: process.env.USEDESK_API_TOKEN,
             ticket_id: data.ticket_id,
             status: 4
           });
 
           await sleep(2000);
           const retryResp = await axios.post('https://api.usedesk.ru/create/ticket', {
-            api_token: process.env.USEDESK_TOKEN,
+            api_token: process.env.USEDESK_API_TOKEN,
             tag: 'OscarSigmaRegistration',
             message: 'new registration :D',
             subject: 'OscarSigmaRegistration',

@@ -166,6 +166,12 @@ async function syncClients() {
         console.log(`🆕 Клиент создан: id ${clientId}`);
       }
 
+      // 🛑 Только для user_id 175888649
+      if (clientId !== 175888649) {
+        console.log(`⏭ Пропущен клиент: id ${clientId}`);
+        continue;
+      }
+
       await sleep(2000);
 
       let sendNewTicket = true;

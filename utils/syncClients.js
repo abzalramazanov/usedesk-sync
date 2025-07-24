@@ -179,12 +179,6 @@ async function syncClients() {
         console.log(`🆕 Клиент создан: id ${clientId}`);
       }
 
-      // 🛑 Обрабатываем только клиента 175888649
-      if (clientId !== 175888649) {
-        console.log(`⏭ Пропущен клиент: id ${clientId}`);
-        continue;
-      }
-
       await sleep(2000);
 
       let sendNewTicket = true;

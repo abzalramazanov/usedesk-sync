@@ -156,12 +156,12 @@ async function syncClients() {
         });
         console.log(`🔄 Клиент обновлён: id ${clientId}`);
       } else {
-        const clientResp = await axios.post(process.env.USEDESK_API_URL, {
-          api_token: process.env.USEDESK_TOKEN,
-          phone,
-          name,
-          position
-        });
+const clientResp = await axios.post('https://api.usedesk.ru/create/client', {
+  api_token: process.env.USEDESK_TOKEN,
+  phone,
+  name,
+  position
+});
         clientId = clientResp.data.client_id || '';
         console.log(`🆕 Клиент создан: id ${clientId}`);
       }

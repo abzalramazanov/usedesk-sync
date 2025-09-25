@@ -114,7 +114,19 @@ async function syncClients() {
 
   const lastLocal = await getLastLocal(doc);
   const sentClients = loadSentClients();
-  const newRows = rows.filter((row) => row.created_local?.trim() > lastLocal);
+
+  // ✅ Сравнение дат через Date, а не строки
+  const newRows = rows.filter((row) => {
+    if (!row.created_local) return false;
+    const rowStr = row.created_local.toString().trim();
+    const rowTime = new Date(rowStr.replace(' ', 'T'));
+    const lastTime = new Date(lastLocal.replace(' ', 'T'));
+    const isNew = rowTime > lastTime;
+
+    console.log(`🔍 Сравниваю row=${rowStr} с lastLocal=${lastLocal} → ${isNew}`);
+    return isNew;
+  });
+
   console.log(`📌 Новых строк после ${lastLocal}: ${newRows.length}`);
   if (newRows.length === 0) {
     console.log('ℹ️ Новых клиентов нет — выходим.');
@@ -127,7 +139,7 @@ async function syncClients() {
     const shortPhone = phone.startsWith('7') ? phone.slice(1) : phone;
     const bin_iin = row.bin_iin || '';
     const name = 'ИИН ' + bin_iin;
-    const createdLocal = row.created_local?.trim();
+    const createdLocal = row.created_local?.toString().trim();
     const fullName = row.full_name || '';
     const position = extractPositionName(fullName);
 
@@ -156,12 +168,12 @@ async function syncClients() {
         });
         console.log(`🔄 Клиент обновлён: id ${clientId}`);
       } else {
-const clientResp = await axios.post('https://api.usedesk.ru/create/client', {
-  api_token: process.env.USEDESK_TOKEN,
-  phone,
-  name,
-  position
-});
+        const clientResp = await axios.post('https://api.usedesk.ru/create/client', {
+          api_token: process.env.USEDESK_TOKEN,
+          phone,
+          name,
+          position
+        });
         clientId = clientResp.data.client_id || '';
         console.log(`🆕 Клиент создан: id ${clientId}`);
       }

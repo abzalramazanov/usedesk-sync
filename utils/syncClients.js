@@ -103,10 +103,10 @@ async function syncClients() {
     return;
   }
 
-  let rows = [];
+  let allRows = [];
   try {
     const sheet = doc.sheetsByIndex[0];
-    rows = await sheet.getRows();
+    allRows = await sheet.getRows();
   } catch {
     unlock();
     return;
@@ -115,17 +115,17 @@ async function syncClients() {
   const lastLocal = await getLastLocal(doc);
   const sentClients = loadSentClients();
 
-  // ✅ Сравнение дат через Date, а не строки
-  const newRows = rows.filter((row) => {
-    if (!row.created_local) return false;
-    const rowStr = row.created_local.toString().trim();
-    const rowTime = new Date(rowStr.replace(' ', 'T'));
-    const lastTime = new Date(lastLocal.replace(' ', 'T'));
-    const isNew = rowTime > lastTime;
-
-    console.log(`🔍 Сравниваю row=${rowStr} с lastLocal=${lastLocal} → ${isNew}`);
-    return isNew;
-  });
+  // 🔥 Новый фильтр: идём с конца и берём только строки после lastLocal
+  const newRows = [];
+  const lastTime = new Date(lastLocal.replace(' ', 'T'));
+  for (let i = allRows.length - 1; i >= 0; i--) {
+    const row = allRows[i];
+    if (!row.created_local) continue;
+    const rowTime = new Date(row.created_local.trim().replace(' ', 'T'));
+    if (rowTime <= lastTime) break; // дальше только старое
+    newRows.push(row);
+  }
+  newRows.reverse(); // порядок с начала листа
 
   console.log(`📌 Новых строк после ${lastLocal}: ${newRows.length}`);
   if (newRows.length === 0) {
@@ -139,7 +139,7 @@ async function syncClients() {
     const shortPhone = phone.startsWith('7') ? phone.slice(1) : phone;
     const bin_iin = row.bin_iin || '';
     const name = 'ИИН ' + bin_iin;
-    const createdLocal = row.created_local?.toString().trim();
+    const createdLocal = row.created_local?.trim();
     const fullName = row.full_name || '';
     const position = extractPositionName(fullName);
 
